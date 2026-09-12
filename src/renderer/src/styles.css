@@ -415,6 +415,14 @@ body {
 .kv:nth-child(odd) { background: rgba(255, 255, 255, 0.014); }
 .kv .k { color: var(--text-faint); overflow: hidden; text-overflow: ellipsis; }
 .kv .v { color: #9fd0ff; word-break: break-all; }
+/* 变量树 */
+.vrow { display: flex; align-items: baseline; gap: 6px; font-family: var(--mono); font-size: 12px; padding: 3px 8px; cursor: default; }
+.vrow:hover { background: rgba(255, 255, 255, 0.03); }
+.vcaret { width: 10px; flex: none; color: var(--text-faint); font-size: 9px; transition: transform 0.12s; cursor: pointer; }
+.vcaret.empty { cursor: default; }
+.vcaret.open { transform: rotate(90deg); }
+.vname { color: var(--text-dim); flex: none; }
+.vval { color: #9fd0ff; word-break: break-all; white-space: pre-wrap; }
 .debug-output {
   background: #090b0f; border: 1px solid var(--border); border-radius: var(--radius-sm);
   padding: 10px 12px; font-family: var(--mono); font-size: 12px; white-space: pre-wrap;

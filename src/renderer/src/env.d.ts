@@ -1,6 +1,7 @@
 /// <reference types="vite/client" />
 
 import type {
+  DebugVar,
   AiChatRequest, AiTestResult, AppInfo, AuthStatus, CatalogEntry, DebugSnapshot, FetchedProblemListEntry,
   Language, Problem, RunResult, Settings, SolutionDetail, SolutionListResult, SolutionOrderBy, SubmitVerdict,
   ToolchainStatus, UpdateStatus
@@ -38,6 +39,7 @@ interface DshApiShape {
     resume(): Promise<DebugSnapshot | undefined>
     stop(): Promise<DebugSnapshot | undefined>
     setBreak(line: number): Promise<DebugSnapshot | undefined>
+    children(ref: string): Promise<DebugVar[]>
     snapshot(): Promise<DebugSnapshot | undefined>
     onEvent(cb: (e: any) => void): void
     onOutput(cb: (t: string) => void): void

@@ -1,6 +1,6 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import type {
-  AiChatRequest, AiTestResult, AppInfo, AuthStatus, CatalogEntry, DebugSnapshot, FetchedProblemListEntry,
+  AiChatRequest, AiTestResult, AppInfo, AuthStatus, CatalogEntry, DebugSnapshot, DebugVar, FetchedProblemListEntry,
   Language, Problem, RunResult, Settings, SolutionDetail, SolutionListResult, SolutionOrderBy, SubmitVerdict,
   TestCase, ToolchainStatus, UpdateStatus
 } from '../shared/types'
@@ -52,6 +52,7 @@ const api = {
     resume: (): Promise<DebugSnapshot | undefined> => invoke('debug:resume'),
     stop: (): Promise<DebugSnapshot | undefined> => invoke('debug:stop'),
     setBreak: (line: number): Promise<DebugSnapshot | undefined> => invoke('debug:break', line),
+    children: (ref: string): Promise<DebugVar[]> => invoke('debug:children', ref),
     snapshot: (): Promise<DebugSnapshot | undefined> => invoke('debug:snapshot'),
     onEvent: (cb: (e: any) => void) => { ipcRenderer.on('debug:event', (_e, ev) => cb(ev)) },
     onOutput: (cb: (t: string) => void) => { ipcRenderer.on('debug:output', (_e, t) => cb(t)) },

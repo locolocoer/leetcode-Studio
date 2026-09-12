@@ -1,4 +1,5 @@
-import type { DebugSnapshot } from '../../../shared/types'
+import { useCallback, useEffect, useRef, useState } from 'react'
+import type { DebugSnapshot, DebugVar } from '../../../shared/types'
 
 interface Props {
   snapshot: DebugSnapshot | null
@@ -32,6 +33,89 @@ function PlaceholderNotice() {
   )
 }
 
+/** 变量树：点箭头展开子节点（容器元素 / 对象字段 / 链表 next …） */
+function VarTree({ vars, stopKey }: { vars: DebugVar[]; stopKey: string }) {
+  // ref -> 子节点；展开状态在同一个「停顿点」内保留（单步后重新拉取，值保持最新）
+  const [expanded, setExpanded] = useState<Set<string>>(new Set())
+  const [kids, setKids] = useState<Record<string, DebugVar[]>>({})
+  const [empty, setEmpty] = useState<Set<string>>(new Set())
+  const [loading, setLoading] = useState<Set<string>>(new Set())
+  const [err, setErr] = useState<string | null>(null)
+  const expandedRef = useRef(expanded)
+  expandedRef.current = expanded
+
+  const load = useCallback(async (ref: string) => {
+    setLoading((s) => new Set(s).add(ref))
+    try {
+      const list = await window.api.debug.children(ref)
+      setKids((k) => ({ ...k, [ref]: list }))
+      // 展开后确实没有子节点 → 收掉箭头，避免误导
+      setEmpty((s) => {
+        const n = new Set(s)
+        if (list.length) n.delete(ref)
+        else n.add(ref)
+        return n
+      })
+    } catch (e: any) {
+      setErr(String(e?.message || e))
+    } finally {
+      setLoading((s) => { const n = new Set(s); n.delete(ref); return n })
+    }
+  }, [])
+
+  // 每次停顿：清空缓存与「空节点」标记，并把已展开的节点重新拉一遍（值随单步刷新）
+  useEffect(() => {
+    setKids({})
+    setEmpty(new Set())
+    setErr(null)
+    for (const ref of expandedRef.current) void load(ref)
+  }, [stopKey, load])
+
+  const toggle = (v: DebugVar) => {
+    if (!v.expandable || !v.ref) return
+    setExpanded((s) => {
+      const n = new Set(s)
+      if (n.has(v.ref)) n.delete(v.ref)
+      else { n.add(v.ref); void load(v.ref) }
+      return n
+    })
+  }
+
+  const renderNode = (v: DebugVar, depth: number): JSX.Element => {
+    const isOpen = expanded.has(v.ref)
+    const childList = kids[v.ref]
+    const canExpand = !!v.expandable && !!v.ref && !empty.has(v.ref)
+    return (
+      <div key={v.ref + '@' + depth}>
+        <div className="vrow" style={{ paddingLeft: 8 + depth * 14 }} onClick={() => toggle(v)}>
+          <span className={`vcaret ${canExpand ? '' : 'empty'} ${isOpen ? 'open' : ''}`}>
+            {canExpand ? '▶' : ''}
+          </span>
+          <span className="vname">{v.name}</span>
+          <span className="vval">{v.value || (isOpen && loading.has(v.ref) ? '加载中…' : '')}</span>
+        </div>
+        {isOpen && childList && childList.map((c) => renderNode(c, depth + 1))}
+        {isOpen && !childList && loading.has(v.ref) && (
+          <div className="vrow" style={{ paddingLeft: 8 + (depth + 1) * 14 }}>
+            <span className="vcaret empty" />
+            <span className="vval">加载中…</span>
+          </div>
+        )}
+      </div>
+    )
+  }
+
+  return (
+    <div className="debug-locals">
+      {!vars.length && (
+        <div style={{ fontSize: 12, color: 'var(--text-faint)', padding: '8px 10px' }}>（暂无局部变量）</div>
+      )}
+      {vars.map((v) => renderNode(v, 0))}
+      {err && <div className="error-text" style={{ padding: '4px 10px' }}>{err}</div>}
+    </div>
+  )
+}
+
 export default function DebugPanel({ snapshot, placeholder, onStep, onOver, onResume, onStop, programOutput }: Props) {
   if (!snapshot || snapshot.status === 'idle') {
     return (
@@ -52,7 +136,9 @@ export default function DebugPanel({ snapshot, placeholder, onStep, onOver, onRe
 
   const paused = snapshot.status === 'paused'
   const frame = snapshot.frame
-  const locals = frame?.locals || {}
+  const vars: DebugVar[] = frame?.vars?.length
+    ? frame.vars
+    : Object.entries(frame?.locals || {}).map(([name, value]) => ({ name, value, ref: '', expandable: false }))
   const stepCount = snapshot.events.filter((e) => e.kind === 'line' || e.kind === 'breakpoint').length
 
   return (
@@ -91,27 +177,13 @@ export default function DebugPanel({ snapshot, placeholder, onStep, onOver, onRe
         <div className="error-text" style={{ marginBottom: 10 }}>{snapshot.error}</div>
       )}
 
-      {/* 变量面板：最常见调试面板放在最显眼处 */}
       <div className="section-label" style={{ marginTop: 0 }}>
         <span>局部变量</span>
         {frame && <span className="mini">{frame.name}()</span>}
         <span className="rule" />
+        {frame?.vars?.length ? <span className="mini">点 ▶ 展开</span> : null}
       </div>
-      <div className="debug-locals">
-        {Object.keys(locals).length === 0 && (
-          <div style={{ fontSize: 12, color: 'var(--text-faint)', padding: '8px 10px' }}>
-            {snapshot.status === 'finished' ? '（程序已结束）' : '（暂无局部变量，暂停后出现）'}
-          </div>
-        )}
-        <div style={{ maxHeight: 240, overflowY: 'auto' }}>
-          {Object.entries(locals).map(([k, v]) => (
-            <div key={k} className="kv">
-              <span className="k">{k}</span>
-              <span className="v" style={{ color: 'var(--text)' }}>{v}</span>
-            </div>
-          ))}
-        </div>
-      </div>
+      <VarTree vars={vars} stopKey={`${frame?.name || ''}:${snapshot.pausedAt || 0}:${stepCount}`} />
 
       <div className="section-label">程序输出</div>
       <pre className="debug-output">{programOutput || '（无输出）'}</pre>

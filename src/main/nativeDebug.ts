@@ -2,7 +2,7 @@
 // Events follow DebugEvent (kind line|breakpoint|finished|error).
 import { spawn, execFileSync, type ChildProcess } from 'child_process'
 import { createServer } from 'net'
-import type { DebugEvent } from '../shared/types'
+import type { DebugEvent, DebugVar } from '../shared/types'
 
 export interface NativeRunner {
   step(): void
@@ -10,6 +10,8 @@ export interface NativeRunner {
   resume(): void
   stop(): void
   addBreakpoint(line: number): void
+  /** 展开变量的子节点（ref 由上一级返回） */
+  children(ref: string): Promise<DebugVar[]>
 }
 
 export interface NativeOpts {
@@ -262,39 +264,7 @@ export function startGdbRunner(o: NativeOpts): NativeRunner {  let child: ChildP
     }
   }
 
-  async function readLocals(): Promise<Record<string, string>> {
-    const p = waitFor(/^\^done,variables=\[.*/)
-    send('-stack-list-variables --thread 1 --frame 0 --all-values\n')
-    const m = await p
-    if (!m) return {}
-    if (process.env.LC_GDB_DEBUG) console.error('[vars] ' + m[0].slice(0, 400))
-    const rest = m[0].slice(m[0].indexOf('[') + 1)
-    const locals: Record<string, string> = {}
-    const re = /\{name="((?:[^"\\]|\\.)*)"[^}]*?value="((?:[^"\\]|\\.)*)"/g
-    let mm: RegExpExecArray | null
-    while ((mm = re.exec(rest))) {
-      locals[mm[1]] = capVal(mm[2] ?? '')
-    }
-    // 指针只显示裸地址时，按结构体展开（链表/树/对象字段）
-    const addrs = Object.entries(locals)
-      .filter(([, v]) => /^0x[0-9a-fA-F]+$/.test(v.trim()) && !isZero(v.trim()))
-      .slice(0, 8)
-    for (const [name, addr] of addrs) {
-      if (!/^[A-Za-z_$][\w$]*$/.test(name)) continue
-      const rendered = await structExpand(name, new Set([addr.toLowerCase()]))
-      if (rendered) locals[name] = capVal(rendered, 300)
-    }
-    // STL 容器/字符串：只用「读内存」的方式渲染（绝不调用被调试程序的函数）
-    const stl = Object.entries(locals)
-      .filter(([, v]) => /std::|{<|_M_|\.\.\.}/.test(v))
-      .slice(0, 8)
-    for (const [name] of stl) {
-      if (!/^[A-Za-z_$][\w$]*$/.test(name)) continue
-      const rendered = await readStl(name)
-      if (rendered) locals[name] = capVal(rendered, 300)
-    }
-    return locals
-  }
+  // 变量读取统一走 readVars()（预览 + 可展开树），这里不再保留旧实现。
 
   // -------------------------------------------------------------------------
   // STL 容器显示：全部基于 gdb 读内存（-data-evaluate-expression 里的取址/解引用），
@@ -336,6 +306,17 @@ export function startGdbRunner(o: NativeOpts): NativeRunner {  let child: ChildP
   const isStringType = (t: string) => /basic_string<|^std::string$/.test(t)
   const isAssocType = (t: string) =>
     /^std::(unordered_)?(map|set)</.test(t) || /^std::(unordered_)?multimap</.test(t) || /^std::(unordered_)?multiset</.test(t)
+  const isMapType = (t: string) => /^std::(unordered_)?(multi)?map</.test(t)
+  const SCALAR = /^(const\s+)?(int|long|short|char|signed|unsigned|size_t|double|float|bool|auto|void)(\s*\*?)?$/
+  /** 该类型是否值得再展开一层（去掉 const / 指针 / 引用修饰再判断） */
+  const isExpandableType = (t: string) => {
+    const s = t.replace(/\b(const|volatile)\b/g, '').replace(/[*&\s]+$/, '').replace(/\s+/g, ' ').trim()
+    if (!s) return false
+    if (isVectorType(s) || isAssocType(s) || /^std::pair</.test(s)) return true
+    if (SCALAR.test(s)) return false
+    if (/^std::/.test(s)) return false            // std::string 等已在本行显示内容
+    return /^[A-Za-z_]\w*(<[^>]*>)?$/.test(s)     // 自定义结构体 / 类
+  }
 
   function fmtSeq(items: string[], more: boolean): string {
     return '[' + items.join(', ') + (more ? ', …' : '') + ']'
@@ -417,13 +398,231 @@ export function startGdbRunner(o: NativeOpts): NativeRunner {  let child: ChildP
     }
   }
 
+  // -------------------------------------------------------------------------
+  // 变量树：点击展开（只读内存，绝不调用被调试程序里的函数）
+  // -------------------------------------------------------------------------
+
+  const MAX_CHILDREN = 64
+
+  /** 折叠时显示的一行预览 */
+  async function previewOf(expr: string, type: string): Promise<string> {
+    if (isStringType(type) && !isVectorType(type)) {
+      const s = await evalExpr(`(${expr})._M_dataplus._M_p`, 4000)
+      const q = /"(.*)"\s*$/.exec(s)
+      return q ? '"' + q[1] + '"' : '""'
+    }
+    if (isVectorType(type)) {
+      const n = await vecCount(expr)
+      if (n < 0) return '?'
+      if (n === 0) return '[]'
+      const elem = firstTemplateArg(type) || ''
+      if (isVectorType(elem) || isAssocType(elem) || isStringType(elem)) {
+        // 嵌套容器：项数不多时把内容也显示出来，多了就只报个数（内容可展开看）
+        if (n > 3) return `[${n} 项]`
+        const parts: string[] = []
+        for (let i = 0; i < n; i++) {
+          parts.push((await previewOf(`(${expr})._M_impl._M_start[${i}]`, elem)) || '?')
+        }
+        return '[' + parts.join(', ') + ']'
+      }
+      const show = Math.min(n, 12)
+      const items = await vecScalarItems(expr, show)
+      if (!items.length) return `[${n} 项]`
+      return items.length <= show ? fmtSeq(items, n > show) : `[${n} 项]`
+    }
+    if (isAssocType(type)) {
+      const n = await assocCount(expr, type)
+      return n < 0 ? '?' : n === 0 ? '{}' : `{${n} 项}`
+    }
+    return ''
+  }
+
+  async function assocCount(expr: string, type: string): Promise<number> {
+    const field = /unordered/.test(type)
+      ? `(${expr})._M_h._M_element_count`
+      : `(${expr})._M_t._M_impl._M_node_count`
+    const s = await evalExpr(field, 4000)
+    const n = parseInt(s.replace(/[^0-9-]/g, ''), 10)
+    return Number.isFinite(n) && n >= 0 ? n : -1
+  }
+
+  interface RawChild { exp: string; numchild: number; value: string; type: string }
+
+  async function listVarChildren(vn: string): Promise<RawChild[]> {
+    const p = waitFor(/^\^done,numchild="\d+",children=\[.*|^\^done,numchild="0"/, 8000)
+    send(`-var-list-children --all-values ${vn}\n`)
+    const m = await p
+    if (!m) { markDead('gdb 没有响应（展开变量超时）。调试会话已结束，请重新开始调试。'); return [] }
+    const line = m[0]
+    const out: RawChild[] = []
+    const re = /child=\{name="(?:[^"\\]|\\.)*",exp="((?:[^"\\]|\\.)*)",numchild="(\d+)",value="((?:[^"\\]|\\.)*)"(?:,type="((?:[^"\\]|\\.)*)")?/g
+    let mm: RegExpExecArray | null
+    while ((mm = re.exec(line))) {
+      out.push({
+        exp: mm[1].replace(/\\"/g, '"'),
+        numchild: parseInt(mm[3], 10),
+        value: capVal(mm[4] ?? ''),
+        type: (mm[5] || '').replace(/\\"/g, '"')
+      })
+      if (out.length >= MAX_CHILDREN + 8) break
+    }
+    return out
+  }
+
+  /** 结构体 / 对象的字段（含 C++ 访问修饰符分组的一层展开） */
+  async function structChildren(expr: string, vn: string, depth = 0): Promise<DebugVar[]> {
+    const kids = await listVarChildren(vn)
+    const out: DebugVar[] = []
+    for (const k of kids) {
+      const isAccessGroup = /^(public|private|protected)$/.test(k.exp)
+      if (isAccessGroup) {
+        if (depth < 1) {
+          // 展开访问分组里的字段
+          const sub = await structChildren(expr, `${vn}.${k.exp}`, depth + 1)
+          out.push(...sub)
+        }
+        continue
+      }
+      const t = k.type || ''
+      out.push({
+        name: k.exp,
+        value: k.value !== '' ? k.value : (isVectorType(t) ? await previewOf(`${expr}.${k.exp}`, t) : ''),
+        ref: `(${expr}).${k.exp}`,
+        expandable: k.numchild > 0 || isExpandableType(t)
+      })
+      if (out.length >= MAX_CHILDREN) break
+    }
+    return out
+  }
+
+  /** 展开一个节点：ref 是本模块生成并回传的 gdb 表达式 */
+  async function childList(ref: string): Promise<DebugVar[]> {
+    if (!ref || ref.length > 500 || done) return []
+    const info = await varCreate(ref)
+    if (!info) return []
+    try {
+      const type = info.type.replace(/\s*\*+$/, '').trim()
+      // vector<T>
+      if (isVectorType(type)) {
+        const n = await vecCount(ref)
+        if (n <= 0) return []
+        const show = Math.min(n, MAX_CHILDREN)
+        const elem = firstTemplateArg(type) || ''
+        const scalarElem = SCALAR.test(elem)
+        const out: DebugVar[] = []
+        if (scalarElem) {
+          const items = await vecScalarItems(ref, show)
+          for (let i = 0; i < items.length; i++) {
+            out.push({ name: `[${i}]`, value: items[i], ref: `(${ref})._M_impl._M_start[${i}]`, expandable: false })
+          }
+        } else {
+          for (let i = 0; i < show; i++) {
+            const childRef = `(${ref})._M_impl._M_start[${i}]`
+            out.push({ name: `[${i}]`, value: await previewOf(childRef, elem), ref: childRef, expandable: true })
+          }
+        }
+        if (n > show) out.push({ name: '…', value: `还有 ${n - show} 项`, ref: '', expandable: false })
+        return out
+      }
+      if (isAssocType(type) || isStringType(type)) return []   // 暂不展开内容（避免版本相关的内存遍历）
+      // 结构体 / 类 / pair（含 ListNode、TreeNode、自定义对象）
+      return await structChildren(ref, info.vn)
+    } finally {
+      await varDelete(info.vn)
+    }
+  }
+
+  /** 把 MI 的 `{k="v",...}` 列表切成一个个对象字符串（引号内的括号不参与计数） */
+  function splitMiObjects(s: string): string[] {
+    const out: string[] = []
+    let depth = 0
+    let start = -1
+    let inStr = false
+    for (let i = 0; i < s.length; i++) {
+      const c = s[i]
+      if (inStr) {
+        if (c === '\\') { i++; continue }
+        if (c === '"') inStr = false
+        continue
+      }
+      if (c === '"') { inStr = true; continue }
+      if (c === '{') { if (depth === 0) start = i + 1; depth++ }
+      else if (c === '}') {
+        depth--
+        if (depth === 0 && start >= 0) { out.push(s.slice(start, i)); start = -1 }
+      }
+    }
+    return out
+  }
+
+  /** 从扁平对象串里取字段 */
+  function miFields(obj: string): Record<string, string> {
+    const r: Record<string, string> = {}
+    const re = /([A-Za-z-]+)="((?:[^"\\]|\\.)*)"/g
+    let m: RegExpExecArray | null
+    while ((m = re.exec(obj))) r[m[1]] = m[2].replace(/\\"/g, '"').replace(/\\\\/g, '\\')
+    return r
+  }
+
+  /** 顶层变量列表：每个变量带 ref、类型与「是否可展开」 */
+  async function readVars(): Promise<DebugVar[]> {
+    const p = waitFor(/^\^done,variables=\[.*/, 8000)
+    // --simple-values 会带上 type（标量还带 value），据此决定是否显示展开箭头
+    send('-stack-list-variables --thread 1 --frame 0 --simple-values\n')
+    const m = await p
+    if (!m) return []
+    const rest = m[0].slice(m[0].indexOf('[') + 1)
+    const out: DebugVar[] = []
+    for (const obj of splitMiObjects(rest)) {
+      const f = miFields(obj)
+      const name = f.name
+      if (!name || !/^[A-Za-z_$][\w$]*$/.test(name)) continue
+      const type = f.type || ''
+      const raw = capVal(f.value ?? '')
+      const preview = await previewForLocal(name, raw, type)
+      out.push({
+        name,
+        value: preview,
+        ref: name,
+        expandable: type ? isExpandableType(type.replace(/\s*\*+\s*$/, '').trim()) : true
+      })
+      if (out.length >= 40) break
+    }
+    return out
+  }
+
+  /** 顶层变量的预览：结构体指针展开成 ListNode[...]，容器展开成 [..] */
+  async function previewForLocal(name: string, raw: string, type: string): Promise<string> {
+    if (/^0x[0-9a-fA-F]+$/.test(raw.trim()) && !isZero(raw.trim())) {
+      const rendered = await structExpand(name, new Set([raw.trim().toLowerCase()]))
+      if (rendered) return capVal(rendered, 300)
+      return raw
+    }
+    if (type && (isVectorType(type) || isStringType(type) || isAssocType(type))) {
+      const rendered = await previewOf(name, type)
+      if (rendered) return capVal(rendered, 300)
+    }
+    if (/std::|{<|_M_|\.\.\.}/.test(raw)) {
+      const rendered = await readStl(name)
+      if (rendered) return capVal(rendered, 300)
+    }
+    return raw
+  }
+
+  function isLocallyExpandable(_name: string): boolean {
+    return true
+  }
+
   async function stopInUser(st: { reason: string; line: number | null; func: string }, kindDefault: 'breakpoint' | 'line') {
-    const l = await readLocals()
+    // 只读一轮变量：预览与树共用，避免每个停顿重复解析
+    const vars = await readVars()
+    const l: Record<string, string> = {}
+    for (const v of vars) l[v.name] = v.value
     const line = st.line ?? 0
     emit({
       kind: st.reason === 'breakpoint-hit' ? 'breakpoint' : kindDefault,
       line,
-      frame: { name: st.func, line, locals: l }
+      frame: { name: st.func, line, locals: l, vars }
     })
   }
 
@@ -538,7 +737,8 @@ export function startGdbRunner(o: NativeOpts): NativeRunner {  let child: ChildP
     stop: () => {
       done = true
       killTree(child)
-    }
+    },
+    children: (ref: string) => childList(ref)
   }
 }
 
@@ -780,6 +980,7 @@ export function startJdbRunner(o: JdbOpts): NativeRunner {
     step: () => { queue = queue.then(() => advance('step')) },
     over: () => { queue = queue.then(() => advance('next')) },
     resume: () => { queue = queue.then(() => advance('cont')) },
+    children: async () => [],   // jdb 侧暂不支持变量树
     addBreakpoint: (line) => {
       queue = queue.then(() => { send('stop at ' + o.userClass + ':' + line); return sleep(200) })
     },

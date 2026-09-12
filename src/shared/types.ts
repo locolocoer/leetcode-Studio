@@ -96,6 +96,17 @@ export interface DebugFrame {
   name: string
   line: number
   locals: Record<string, string>
+  /** 可展开的变量树（当前支持 C/C++） */
+  vars?: DebugVar[]
+}
+
+/** 变量树节点：value 是一行预览，ref 用于按需展开子节点 */
+export interface DebugVar {
+  name: string
+  value: string
+  /** 不透明引用（内部是 gdb 表达式），展开子节点时回传 */
+  ref: string
+  expandable?: boolean
 }
 
 export interface DebugEvent {

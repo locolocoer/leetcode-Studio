@@ -233,6 +233,7 @@ function registerIpc() {
   ipcMain.handle('debug:stop', () => { debugSession?.stop(); return debugSession?.snapshot })
   ipcMain.handle('debug:break', (_e, line: number) => { debugSession?.addBreakpoint(line); return debugSession?.snapshot })
   ipcMain.handle('debug:snapshot', () => debugSession?.snapshot)
+  ipcMain.handle('debug:children', (_e, ref: string) => debugSession?.children(ref) ?? [])
   ipcMain.handle('app:version', () => app.getVersion())
   ipcMain.handle('clipboard:text', () => a.clipboardText())
   ipcMain.handle('open:external', (_e, url: string) => a.openExternal(url))

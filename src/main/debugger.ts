@@ -469,6 +469,12 @@ export class DebugSession {
     this.send('break ' + line)
   }
 
+  /** 展开变量树的一个节点（仅 C/C++ 支持，其它语言返回空） */
+  async children(ref: string) {
+    if (!this.native) return []
+    return this.native.children(ref)
+  }
+
   private kill() {
     try { this.child?.kill('SIGKILL') } catch {}
   }
