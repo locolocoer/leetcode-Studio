@@ -1,0 +1,232 @@
+// 轻量 Markdown 渲染：只覆盖 LeetCode 题解实际用到的语法。
+// 内容来自网络，必须先转义 HTML 再做标记替换，避免注入。
+
+export function escapeHtml(s: string): string {
+  return s
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;')
+}
+
+// 题解里的图片是相对 key（视频/图片）时补全为 leetcode.cn 资源地址
+function resolveAsset(url: string): { src: string; isVideo: boolean } {
+  const u = url.trim()
+  if (/^(https?:)?\/\//i.test(u) || u.startsWith('data:')) return { src: u, isVideo: /\.(mp4|mov|webm)$/i.test(u) }
+  const isVideo = /\.(mp4|mov|webm)$/i.test(u)
+  return { src: `https://pic.leetcode.cn/${u.replace(/^\/+/, '')}`, isVideo }
+}
+
+// 数学公式：没有 KaTeX，做一次轻量 LaTeX → 近似可读文本
+function texToText(tex: string): string {
+  let s = tex
+  s = s.replace(/\\(?:math(?:cal|it|bf|rm|tt|sf)|text(?:bf|it|rm|tt|sf)?|operatorname|mathrm)\s*\{([^{}]*)\}/g, '$1')
+  s = s.replace(/\\(?:left|right|big|Big|bigg|Bigg)\b/g, '')
+  s = s.replace(/\\(?:times|cdot)\b/g, '×')
+  s = s.replace(/\\leq?\b/g, '≤').replace(/\\geq?\b/g, '≥')
+  s = s.replace(/\\neq\b/g, '≠').replace(/\\approx\b/g, '≈')
+  s = s.replace(/\\infty\b/g, '∞').replace(/\\pi\b/g, 'π')
+  s = s.replace(/\\sum\b/g, 'Σ').replace(/\\log\b/g, 'log')
+  s = s.replace(/\\sqrt\s*\{([^{}]*)\}/g, '√($1)')
+  s = s.replace(/\\(?:quad|qquad|,|;|!|\s)/g, ' ')
+  s = s.replace(/\\[a-zA-Z]+/g, '')
+  s = s.replace(/[{}]/g, '')
+  s = s.replace(/\^\{([^{}]*)\}/g, (_m, p1) => sup(p1))
+  s = s.replace(/\^(\w)/g, (_m, p1) => sup(p1))
+  s = s.replace(/_\{([^{}]*)\}/g, (_m, p1) => sub(p1))
+  s = s.replace(/_(\w)/g, (_m, p1) => sub(p1))
+  return s.trim()
+}
+
+const SUP: Record<string, string> = { '0': '⁰', '1': '¹', '2': '²', '3': '³', '4': '⁴', '5': '⁵', '6': '⁶', '7': '⁷', '8': '⁸', '9': '⁹', n: 'ⁿ', i: 'ⁱ' }
+const SUB: Record<string, string> = { '0': '₀', '1': '₁', '2': '₂', '3': '₃', '4': '₄', '5': '₅', '6': '₆', '7': '₇', '8': '₈', '9': '₉', n: 'ₙ', i: 'ᵢ', j: 'ⱼ', k: 'ₖ' }
+
+function sup(s: string): string {
+  return [...s].map((c) => SUP[c] ?? '^' + c).join('')
+}
+function sub(s: string): string {
+  return [...s].map((c) => SUB[c] ?? '_' + c).join('')
+}
+
+// 行内标记（输入片段已转义）
+function inline(src: string): string {
+  let s = src
+  // 行内数学（先处理，避免 $ 内的 * _ 被当成强调）
+  const maths: string[] = []
+  s = s.replace(/\$([^$\n]+)\$/g, (_m, tex) => {
+    maths.push(texToText(tex))
+    return `\u0000M${maths.length - 1}\u0000`
+  })
+  // 行内代码
+  const codes: string[] = []
+  s = s.replace(/`([^`\n]+)`/g, (_m, c) => {
+    codes.push(c)
+    return `\u0000C${codes.length - 1}\u0000`
+  })
+  // 图片 / 链接
+  s = s.replace(/!\[([^\]]*)\]\(([^)\s]+)(?:\s+"[^"]*")?\)/g, (_m, alt, url) => {
+    const { src: u, isVideo } = resolveAsset(url)
+    if (isVideo) {
+      return `<a class="md-video" href="${u}" target="_blank" rel="noreferrer">▶ ${alt || '视频讲解'}</a>`
+    }
+    return `<img src="${u}" alt="${alt}" loading="lazy" />`
+  })
+  s = s.replace(/\[([^\]]*)\]\(([^)\s]+)(?:\s+"[^"]*")?\)/g, (_m, text, url) => {
+    const href = /^(https?:)?\/\//i.test(url) ? url : `https://leetcode.cn/${url.replace(/^\/+/, '')}`
+    return `<a href="${href}" target="_blank" rel="noreferrer">${text || href}</a>`
+  })
+  s = s.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
+  s = s.replace(/__([^_]+)__/g, '<strong>$1</strong>')
+  s = s.replace(/(^|[\s（(])\*([^*\n]+)\*/g, '$1<em>$2</em>')
+  s = s.replace(/~~([^~]+)~~/g, '<del>$1</del>')
+  s = s.replace(/\u0000C(\d+)\u0000/g, (_m, i) => `<code>${codes[Number(i)]}</code>`)
+  s = s.replace(/\u0000M(\d+)\u0000/g, (_m, i) => `<span class="md-math">${maths[Number(i)]}</span>`)
+  return s
+}
+
+/** Markdown → HTML（仅用于展示，已做 HTML 转义） */
+export function renderMarkdown(md: string): string {
+  const lines = md.replace(/\r\n?/g, '\n').split('\n')
+  const out: string[] = []
+  let i = 0
+  let para: string[] = []
+  let codeIdx = 0
+
+  const flushPara = () => {
+    if (para.length) {
+      out.push(`<p>${inline(escapeHtml(para.join('\n'))).replace(/\n/g, '<br/>')}</p>`)
+      para = []
+    }
+  }
+
+  while (i < lines.length) {
+    const line = lines[i]
+
+    // 代码块
+    const fence = /^\s*```+\s*(.*)$/.exec(line)
+    if (fence) {
+      flushPara()
+      const info = fence[1].trim()
+      // 形如 "Java [sol1-Java]" / "py [sol-Python3]"：语言名 + 可选标注
+      const lang = (info.split(/[\s[]/)[0] || '').toLowerCase()
+      const note = /\[([^\]]+)\]/.exec(info)?.[1] || ''
+      const body: string[] = []
+      i++
+      while (i < lines.length && !/^\s*```+\s*$/.test(lines[i])) {
+        body.push(lines[i])
+        i++
+      }
+      i++ // 跳过结束围栏
+      const label = note || lang
+      const key = 'code' + codeIdx++
+      out.push(
+        `<div class="md-code"><div class="md-code-head"><span>${escapeHtml(label)}</span>` +
+        `<button class="md-copy" data-key="${key}" data-copy="${escapeHtml(body.join('\n'))}">复制</button></div>` +
+        `<pre><code>${escapeHtml(body.join('\n'))}</code></pre></div>`
+      )
+      continue
+    }
+
+    // 标题
+    const h = /^(#{1,6})\s+(.*)$/.exec(line)
+    if (h) {
+      flushPara()
+      const lvl = Math.min(h[1].length + 1, 6) // # → h2，避免与外部标题冲突
+      out.push(`<h${lvl}>${inline(escapeHtml(h[2].trim()))}</h${lvl}>`)
+      i++
+      continue
+    }
+
+    // 分隔线
+    if (/^\s*([-*_])\s*\1\s*\1[\s\-*_]*$/.test(line)) {
+      flushPara()
+      out.push('<hr/>')
+      i++
+      continue
+    }
+
+    // 引用
+    if (/^\s*>/.test(line)) {
+      flushPara()
+      const quote: string[] = []
+      while (i < lines.length && /^\s*>/.test(lines[i])) {
+        quote.push(lines[i].replace(/^\s*>\s?/, ''))
+        i++
+      }
+      out.push(`<blockquote>${inline(escapeHtml(quote.join('\n'))).replace(/\n/g, '<br/>')}</blockquote>`)
+      continue
+    }
+
+    // 表格（| a | b | / |---|---|）
+    if (/^\s*\|.*\|\s*$/.test(line) && /^\s*\|?[\s:|-]+\|[\s:|-]*$/.test(lines[i + 1] || '')) {
+      flushPara()
+      const cells = (l: string) => l.trim().replace(/^\||\|$/g, '').split('|').map((c) => c.trim())
+      const head = cells(line)
+      i += 2
+      const rows: string[][] = []
+      while (i < lines.length && /^\s*\|.*\|\s*$/.test(lines[i])) {
+        rows.push(cells(lines[i]))
+        i++
+      }
+      out.push(
+        '<table class="md-table"><thead><tr>' +
+        head.map((c) => `<th>${inline(escapeHtml(c))}</th>`).join('') +
+        '</tr></thead><tbody>' +
+        rows.map((r) => '<tr>' + r.map((c) => `<td>${inline(escapeHtml(c))}</td>`).join('') + '</tr>').join('') +
+        '</tbody></table>'
+      )
+      continue
+    }
+
+    // 列表（有序/无序，支持一层缩进）
+    if (/^\s*([-*+]|\d+\.)\s+/.test(line)) {
+      flushPara()
+      const ordered = /^\s*\d+\./.test(line)
+      const items: string[] = []
+      while (i < lines.length && /^\s*([-*+]|\d+\.)\s+/.test(lines[i])) {
+        let text = lines[i].replace(/^\s*([-*+]|\d+\.)\s+/, '')
+        i++
+        // 续行（缩进且不是新条目）
+        while (i < lines.length && /^\s+\S/.test(lines[i]) && !/^\s*([-*+]|\d+\.)\s+/.test(lines[i])) {
+          text += ' ' + lines[i].trim()
+          i++
+        }
+        items.push(`<li>${inline(escapeHtml(text))}</li>`)
+      }
+      out.push(`<${ordered ? 'ol' : 'ul'}>${items.join('')}</${ordered ? 'ol' : 'ul'}>`)
+      continue
+    }
+
+    // 独立公式块
+    if (/^\s*\$\$/.test(line)) {
+      flushPara()
+      const body: string[] = []
+      const same = /\$\$(.+?)\$\$/.exec(line)
+      if (same) {
+        body.push(same[1])
+        i++
+      } else {
+        i++
+        while (i < lines.length && !/\$\$/.test(lines[i])) {
+          body.push(lines[i])
+          i++
+        }
+        i++
+      }
+      out.push(`<div class="md-math-block">${escapeHtml(texToText(body.join(' ')))}</div>`)
+      continue
+    }
+
+    if (!line.trim()) {
+      flushPara()
+      i++
+      continue
+    }
+
+    para.push(line)
+    i++
+  }
+  flushPara()
+  return out.join('\n')
+}

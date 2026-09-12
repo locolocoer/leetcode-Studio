@@ -1,0 +1,152 @@
+name: Build Installers
+
+on:
+  push:
+    tags: ["v*"]
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  # ---------------------------------------------------------------- 类型检查 + 构建
+  test:
+    name: Test (typecheck + build)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Typecheck + build
+        run: npm run check
+
+  # ---------------------------------------------------------------- 打包安装包（Windows）
+  build:
+    name: Build windows installer
+    # tag（发版）/ PR / 手动触发时打包；日常 push main 只跑 test
+    if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch'
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      # 内置工具链（Python embeddable / w64devkit GCC+GDB / jlink JDK17）不入库，
+      # 由脚本按固定版本下载并裁剪，保证 CI 与本地发布一致。
+      - name: Cache bundled toolchains
+        uses: actions/cache@v4
+        with:
+          path: |
+            toolchains
+            .toolchain-cache
+          key: toolchains-win-${{ hashFiles('scripts/prepare-toolchains.mjs') }}
+
+      - name: Prepare bundled toolchains
+        run: node scripts/prepare-toolchains.mjs
+        timeout-minutes: 30
+
+      - name: Verify toolchains
+        shell: pwsh
+        run: |
+          $checks = @(
+            'toolchains/python/python.exe',
+            'toolchains/w64/w64devkit/bin/gcc.exe',
+            'toolchains/w64/w64devkit/bin/gdb.exe',
+            'toolchains/jdk17/bin/java.exe',
+            'toolchains/jdk17/bin/javac.exe',
+            'toolchains/jdk17/bin/jdb.exe'
+          )
+          foreach ($c in $checks) {
+            if (-not (Test-Path $c)) { Write-Error "缺少 $c"; exit 1 }
+            Write-Host "ok  $c"
+          }
+          & toolchains/w64/w64devkit/bin/gcc.exe --version | Select-Object -First 1
+          & toolchains/python/python.exe -V
+
+      - name: Build
+        run: npm run build
+
+      - name: Package (installer + portable)
+        run: npx electron-builder --win --publish never
+
+      - name: Upload installers
+        uses: actions/upload-artifact@v4
+        with:
+          name: installers-windows
+          path: |
+            release/*.exe
+            release/*.yml
+            release/*.blockmap
+          if-no-files-found: error
+
+  # ---------------------------------------------------------------- 发布
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v')
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+
+      - name: List artifacts
+        run: ls -la artifacts
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        continue-on-error: true
+        with:
+          files: artifacts/**
+          generate_release_notes: true
+
+      # 可选：把产物同步到阿里云 OSS，作为国内自动更新源。
+      # 在仓库 Settings → Secrets 配置 OSS_ACCESS_KEY_ID / OSS_ACCESS_KEY_SECRET 后自动启用；
+      # 未配置时跳过，客户端会回退到 GitHub Release。
+      - name: Upload to Aliyun OSS
+        if: env.OSS_ACCESS_KEY_ID != ''
+        env:
+          OSS_ACCESS_KEY_ID: ${{ secrets.OSS_ACCESS_KEY_ID }}
+          OSS_ACCESS_KEY_SECRET: ${{ secrets.OSS_ACCESS_KEY_SECRET }}
+          OSS_BUCKET: ${{ vars.OSS_BUCKET || 'leetcode-studio' }}
+        run: |
+          set -e
+          curl -sL https://gosspublic.alicdn.com/ossutil/1.7.18/ossutil64 -o ossutil
+          chmod +x ossutil
+          ./ossutil config -e oss-cn-beijing.aliyuncs.com -i "$OSS_ACCESS_KEY_ID" -k "$OSS_ACCESS_KEY_SECRET"
+          VERSION="${GITHUB_REF_NAME#v}"
+          mkdir -p "artifacts/v${VERSION}"
+          # latest*.yml 留在根目录作为稳定的更新指针，其余产物按版本归档
+          for f in artifacts/*; do
+            [ -d "$f" ] && continue
+            case "$(basename "$f")" in
+              latest*.yml) ;;
+              *) mv "$f" "artifacts/v${VERSION}/" ;;
+            esac
+          done
+          for yml in artifacts/latest*.yml; do
+            [ -f "$yml" ] || continue
+            sed -i -E "s#(url|path): #\1: v${VERSION}/#" "$yml"
+          done
+          ./ossutil cp -rf artifacts/ "oss://${OSS_BUCKET}/"

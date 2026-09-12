@@ -1,0 +1,46 @@
+appId: com.leetcodestudio.app
+productName: LeetCode Studio
+directories:
+  output: release
+  buildResources: build
+files:
+  - out/**
+  - package.json
+  - "!**/.npm-cache"
+extraResources:
+  - from: toolchains
+    to: toolchains
+    filter:
+      - "**/*"
+asar: true
+win:
+  target:
+    - nsis
+    - portable
+  # 注意：文件名里不要出现空格，否则自动更新的 latest.yml 与真实文件名会不一致
+  artifactName: LeetCode-Studio-${version}-setup.${ext}
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  shortcutName: LeetCode Studio
+  # 自动更新：生成差分包 + 卸载时保留用户数据
+  differentialPackage: true
+  deleteAppDataOnUninstall: false
+portable:
+  artifactName: LeetCode-Studio-${version}-portable.${ext}
+mac:
+  target:
+    - dmg
+  category: public.app-category.developer-tools
+linux:
+  target:
+    - AppImage
+  category: Development
+# 自动更新源：GitHub Release（CI 也会把产物同步到阿里云 OSS，主进程优先用 OSS）
+publish:
+  provider: github
+  owner: locolocoer
+  repo: leetcode-Studio
+  releaseType: release

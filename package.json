@@ -1,0 +1,44 @@
+{
+  "name": "leetcode-studio",
+  "version": "1.0.0",
+  "description": "本地 LeetCode 刷题与多语言调试桌面应用",
+  "main": "out/main/index.js",
+  "author": "LeetCode Studio",
+  "license": "MIT",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "dev": "electron-vite dev",
+    "build": "electron-vite build",
+    "typecheck:node": "tsc --noEmit -p tsconfig.node.json",
+    "typecheck:web": "tsc --noEmit -p tsconfig.web.json",
+    "typecheck": "npm run typecheck:node && npm run typecheck:web",
+    "check": "npm run typecheck && electron-vite build",
+    "toolchains": "node scripts/prepare-toolchains.mjs",
+    "version:bump": "node scripts/bump-version.mjs",
+    "start": "electron-vite preview",
+    "package": "electron-builder",
+    "package:win": "electron-vite build && electron-builder --win --publish never",
+    "package:mac": "electron-vite build && electron-builder --mac --publish never",
+    "package:linux": "electron-vite build && electron-builder --linux --publish never"
+  },
+  "dependencies": {
+    "@monaco-editor/react": "^4.6.0",
+    "electron-updater": "^6.8.9",
+    "monaco-editor": "^0.50.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  },
+  "devDependencies": {
+    "@types/node": "^20.14.0",
+    "@types/react": "^18.3.3",
+    "@types/react-dom": "^18.3.0",
+    "@vitejs/plugin-react": "^4.3.1",
+    "electron": "^31.3.1",
+    "electron-builder": "^24.13.3",
+    "electron-vite": "^2.3.0",
+    "typescript": "^5.5.4",
+    "vite": "^5.4.0"
+  }
+}

@@ -1,0 +1,23 @@
+node_modules/
+out/
+release/
+dist/
+.runtime/
+.runtime-smoke/
+.leetcode-studio/
+.npm-cache/
+.DS_Store
+*.log
+
+# 内置工具链（约 400MB）：由 scripts/prepare-toolchains.mjs 在本地/CI 下载生成，不入库
+toolchains/
+
+# 临时产物
+.tmp-t/
+.tmp-*
+.ui-*.png
+.locals-dbg/
+.py-nodes-run/
+.p160-dbg/
+.p160-runtime/
+.native-runtime/
