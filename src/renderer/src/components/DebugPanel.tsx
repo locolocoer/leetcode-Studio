@@ -82,11 +82,6 @@ export default function DebugPanel({ snapshot, placeholder, onStep, onOver, onRe
         <span>已停 {stepCount} 次</span>
       </div>
 
-      {paused && frame && (
-        <div style={{ fontSize: 11.5, color: 'var(--text-faint)', marginBottom: 10 }}>
-          高亮行 = <b style={{ color: 'var(--text-dim)' }}>即将执行</b> 的语句；下方变量是执行它<b style={{ color: 'var(--text-dim)' }}>之前</b>的值（与 VS Code 一致）。
-        </div>
-      )}
       {snapshot.status === 'finished' && (
         <div style={{ fontSize: 12.5, color: 'var(--green)', marginBottom: 10 }}>
           ✓ 程序已运行结束，最终结果见下方「程序输出」。
@@ -116,19 +111,6 @@ export default function DebugPanel({ snapshot, placeholder, onStep, onOver, onRe
             </div>
           ))}
         </div>
-      </div>
-
-      <div className="section-label">执行轨迹（最近几步）</div>
-      <div className="debug-output" style={{ maxHeight: 150 }}>
-        {snapshot.events.length === 0 && <span style={{ color: 'var(--text-faint)' }}>（暂无轨迹）</span>}
-        {snapshot.events.map((e, i) => (
-          <div key={i} style={{ color: e.kind === 'exception' ? 'var(--red)' : 'var(--text-dim)', fontSize: 11.5 }}>
-            {e.kind === 'breakpoint' && <>◆ 断点停在第 {e.line} 行 · {e.frame?.name}()</>}
-            {e.kind === 'line' && <>→ 第 {e.line} 行 · {e.frame?.name}()</>}
-            {e.kind === 'exception' && <>✗ 异常：{e.message}</>}
-            {e.kind === 'finished' && <>■ 程序结束</>}
-          </div>
-        ))}
       </div>
 
       <div className="section-label">程序输出</div>
