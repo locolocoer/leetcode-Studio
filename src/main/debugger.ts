@@ -5,7 +5,7 @@ import type {
   DebugEvent, DebugSnapshot, Language, Problem, TestCase, ToolchainStatus
 } from '../shared/types'
 import { sanitize, isLockError, killProcessesUnder } from './runner'
-import { buildHarness, intersectIndices, pyShapes, pyIndent, isNodeReturn, PY_NODES } from './harness'
+import { buildHarness, intersectIndices, pyShapes, pyIndent, isNodeReturn, nodeValueReturn, PY_NODES } from './harness'
 import { startGdbRunner, startJdbRunner, type NativeRunner } from './nativeDebug'
 
 export type DebuggerEvents = {
@@ -211,9 +211,12 @@ ${pyIndent(PY_NODES)}
             shapes = json.loads(os.environ.get("LC_SHAPES", "[]"))
             args = _lc_load([json.loads(l) for l in lines], shapes)
             obj = cls(); result = getattr(obj, method)(*args)
-            if result is None and os.environ.get("LC_RET_NODE") == "1":
-                result = []
-            print(json.dumps(_lc_dump(result), ensure_ascii=False, default=lambda o: None))
+            if os.environ.get("LC_RET_NODE_VALUE") == "1":
+                print("null" if result is None else json.dumps(result.val))
+            else:
+                if result is None and os.environ.get("LC_RET_NODE") == "1":
+                    result = []
+                print(json.dumps(_lc_dump(result), ensure_ascii=False, default=lambda o: None))
     finally:
         sys.stdout = real_stdout; sys.settrace(None); emit({"kind": "finished"})
 main()
@@ -331,8 +334,9 @@ export class DebugSession {
           ...process.env,
           LC_JUDGE: problem.judgeType,
           LC_METHOD: problem.judgeType === 'function' ? problem.methodName : '',
-          LC_SHAPES: JSON.stringify(pyShapes(problem)),
+          LC_SHAPES: JSON.stringify(pyShapes(problem, sourceCode)),
           LC_RET_NODE: isNodeReturn(problem) ? '1' : '0',
+          LC_RET_NODE_VALUE: nodeValueReturn(problem) ? '1' : '0',
           ...(idx
             ? {
                 LC_MANUAL: 'intersect',
@@ -740,7 +744,7 @@ public class LcDbg {
     const javac = toolchain.compilerPath || 'javac'
     const env: NodeJS.ProcessEnv = { ...process.env }
     if (toolchain.compilerPath) env.PATH = dirname(toolchain.compilerPath) + delimiter + (env.PATH || '')
-    const javacArgs = ['-g', className + '.java', 'Main.java', 'LcDbg.java']
+    const javacArgs = ['-encoding', 'UTF-8', '-g', className + '.java', 'Main.java', 'LcDbg.java']
     let javaErr = ''
     for (let attempt = 0; attempt < 2; attempt++) {
       try {

@@ -67,6 +67,123 @@ export function intersectIndices(problem: Problem): { iv: number; lA: number; lB
   }
 }
 
+// ---------------------------------------------------------------------------
+// 「按值引用的节点参数」——二叉树最近公共祖先这类题
+//
+// LeetCode 的元数据里 p/q 写的是 integer、测试用例给的是节点值（如 "5"），
+// 但真实签名是 TreeNode*（题目要求传入树里的那个节点）。本地判题必须：
+//   1) 先由前面的树参数建出整棵树；
+//   2) 在树里按值找到对应节点，把指针传进去；
+//   3) 返回值也是「节点引用」时，按节点值（而不是整棵树）比较。
+// 这里解析用户真实签名来判断哪些参数属于这种情况。
+// ---------------------------------------------------------------------------
+
+export interface NodeRefParam {
+  index: number
+  kind: 'tree' | 'linkedlist'
+  /** 用来查找节点的「节点池」参数下标（前面第一个同类型参数） */
+  pool: number
+}
+
+/** 把顶层逗号分隔开（忽略括号/尖括号/引号内部的逗号） */
+function splitTopLevel(s: string): string[] {
+  const out: string[] = []
+  let depth = 0
+  let cur = ''
+  let inStr: string | null = null
+  for (const c of s) {
+    if (inStr) {
+      cur += c
+      if (c === inStr) inStr = null
+      continue
+    }
+    if (c === '"' || c === "'") { inStr = c; cur += c; continue }
+    if (c === '(' || c === '[' || c === '{' || c === '<') depth++
+    else if (c === ')' || c === ']' || c === '}' || c === '>') depth--
+    if (c === ',' && depth === 0) { out.push(cur); cur = ''; continue }
+    cur += c
+  }
+  if (cur.trim()) out.push(cur)
+  return out
+}
+
+/** 从源码里解析函数签名，返回各参数的类型文本（不含参数名） */
+export function declaredParamTypes(
+  sourceCode: string,
+  language: Language,
+  methodName: string
+): string[] | null {
+  const src = sourceCode || ''
+  const idx = methodName ? src.indexOf(methodName) : -1
+  if (idx < 0) return null
+  const open = src.indexOf('(', idx + methodName.length)
+  if (open < 0) return null
+  let depth = 0
+  let end = -1
+  for (let i = open; i < src.length; i++) {
+    const c = src[i]
+    if (c === '(') depth++
+    else if (c === ')') { depth--; if (depth === 0) { end = i; break } }
+  }
+  if (end < 0) return null
+  const inner = src.slice(open + 1, end)
+  const out: string[] = []
+  for (const raw of splitTopLevel(inner)) {
+    let p = raw.trim()
+    if (!p) continue
+    if (language === 'python') {
+      if (/^self$/.test(p)) continue
+      const ci = p.indexOf(':')
+      if (ci < 0) { out.push(''); continue }
+      out.push(p.slice(ci + 1).replace(/=.*$/, '').replace(/['"]/g, '').trim())
+      continue
+    }
+    // C / C++ / Java：去掉默认值，再去掉末尾的参数名
+    p = p.replace(/=.*$/, '').trim()
+    const m = /^(.*?)\b([A-Za-z_]\w*)\s*(\[\s*\])?$/.exec(p)
+    const type = (m ? m[1] : p).trim()
+    out.push(type || p)
+  }
+  return out
+}
+
+/** 元数据说是标量、但真实签名是节点指针的参数 */
+export function nodeRefParams(
+  problem: Problem,
+  sourceCode: string,
+  language: Language
+): NodeRefParam[] {
+  if (problem.judgeType !== 'function') return []
+  const params = problem.params || []
+  const declared = declaredParamTypes(sourceCode, language, problem.methodName || '')
+  if (!declared) return []
+  const out: NodeRefParam[] = []
+  for (let i = 0; i < params.length; i++) {
+    if (parseType(params[i].type).kind !== 'scalar') continue
+    const d = declared[i] || ''
+    if (!/TreeNode|ListNode/.test(d)) continue
+    const kind: 'tree' | 'linkedlist' = /TreeNode/.test(d) ? 'tree' : 'linkedlist'
+    let pool = -1
+    for (let j = 0; j < i; j++) {
+      if (parseType(params[j].type).kind === kind) { pool = j; break }
+    }
+    if (pool < 0) continue
+    out.push({ index: i, kind, pool })
+  }
+  return out
+}
+
+/** 返回值是「节点引用」而不是整棵树/链表：测试期望值是标量（如 LCA 返回节点值） */
+export function nodeValueReturn(problem: Problem): boolean {
+  const rs = parseType(problem.returnType || '')
+  if (rs.kind !== 'tree' && rs.kind !== 'linkedlist') return false
+  const exps = (problem.tests || [])
+    .map((t) => String(t.expected ?? '').trim())
+    .filter((e) => e !== '')
+  if (!exps.length) return false
+  return exps.every((e) => /^(null|-?\d+)$/.test(e))
+}
+
 // ---------- Python ----------
 
 // LeetCode Python 的 ListNode / TreeNode 由平台提供，本地需要自己构造。
@@ -121,9 +238,37 @@ def _lc_load(args, shapes):
             out.append(_lc_ll(a))
         elif k == "tree":
             out.append(_lc_tree(a))
+        elif k.startswith("ll@"):
+            out.append(_lc_find_ll(out[int(k[3:])], a))
+        elif k.startswith("tree@"):
+            out.append(_lc_find_tree(out[int(k[5:])], a))
         else:
             out.append(a)
     return out
+
+
+# 按值引用的节点（LCA 这类题：测试给的是节点值，需要拿出树里对应的那个节点）
+def _lc_find_tree(root, v):
+    if root is None:
+        return None
+    q = [root]
+    while q:
+        n = q.pop(0)
+        if n.val == v:
+            return n
+        if n.left is not None:
+            q.append(n.left)
+        if n.right is not None:
+            q.append(n.right)
+    return None
+
+
+def _lc_find_ll(head, v):
+    while head is not None:
+        if head.val == v:
+            return head
+        head = head.next
+    return None
 
 
 def _lc_dump(v):
@@ -164,9 +309,14 @@ def _lc_bind_nodes(sol):
         sol.TreeNode = TreeNode
 `
 
-// 每个参数对应的节点构造方式（ll=链表, tree=二叉树, 空=原样传入）
-export function pyShapes(problem: Problem): string[] {
-  return (problem.params || []).map((p) => {
+// 每个参数对应的节点构造方式（ll=链表, tree=二叉树, ll@n/tree@n=从第 n 个参数里按值找节点, 空=原样传入）
+export function pyShapes(problem: Problem, sourceCode = ''): string[] {
+  const refs = new Map(
+    nodeRefParams(problem, sourceCode, 'python').map((r) => [r.index, r])
+  )
+  return (problem.params || []).map((p, i) => {
+    const nr = refs.get(i)
+    if (nr) return (nr.kind === 'tree' ? 'tree@' : 'll@') + nr.pool
     const s = parseType(p.type)
     return s.kind === 'linkedlist' ? 'll' : s.kind === 'tree' ? 'tree' : ''
   })
@@ -278,8 +428,9 @@ main()
 from solution import ${className}
 ${PY_NODES}
 _lc_bind_nodes(sys.modules["solution"])
-_SHAPES = json.loads(${JSON.stringify(JSON.stringify(pyShapes(problem)))})
+_SHAPES = json.loads(${JSON.stringify(JSON.stringify(pyShapes(problem, sourceCode)))})
 _RET_NODE = ${retNode ? 'True' : 'False'}
+_RET_NODE_VALUE = ${nodeValueReturn(problem) ? 'True' : 'False'}
 
 def main():
     raw = sys.stdin.read()
@@ -287,6 +438,10 @@ def main():
     args = _lc_load([json.loads(l) for l in lines], _SHAPES)
     sol = ${className}()
     result = sol.${fn}(*args)
+    if _RET_NODE_VALUE:
+        # 返回的是「树里的某个节点」（如最近公共祖先）：比节点值而不是整棵树
+        print("null" if result is None else json.dumps(result.val))
+        return
     if result is None and _RET_NODE:
         result = []
     print(json.dumps(_lc_dump(result), ensure_ascii=False, default=lambda o: None))
@@ -383,6 +538,23 @@ class Json {
     return (long) Long.parseLong(t);
   }
   public static int toInt(Object o) { return ((Number)o).intValue(); }
+  // node referenced by value: locate the node with this value (LCA-style problems)
+  public static TreeNode findTreeNode(TreeNode root, int v) {
+    if (root == null) return null;
+    Deque<TreeNode> q = new ArrayDeque<>();
+    q.add(root);
+    while (!q.isEmpty()) {
+      TreeNode n = q.poll();
+      if (n.val == v) return n;
+      if (n.left != null) q.add(n.left);
+      if (n.right != null) q.add(n.right);
+    }
+    return null;
+  }
+  public static ListNode findListNode(ListNode head, int v) {
+    while (head != null) { if (head.val == v) return head; head = head.next; }
+    return null;
+  }
   public static long toLong(Object o) { return ((Number)o).longValue(); }
   public static double toDouble(Object o) { return ((Number)o).doubleValue(); }
   public static boolean toBool(Object o) { return o instanceof Boolean ? (Boolean)o : ((Number)o).intValue() != 0; }
@@ -578,15 +750,29 @@ function javaHarness(problem: Problem, sourceCode: string, className: string): H
 `
   } else {
     const params = problem.params
-    const args = params.map((p, i) => javaLoadFrom(parseType(p.type), `a.get(${i})`)).join(', ')
+    const refs = new Map(nodeRefParams(problem, sourceCode, 'java').map((r) => [r.index, r]))
+    const declared = declaredParamTypes(sourceCode, 'java', problem.methodName || '') || []
+    const lds = params.map((p, i) => {
+      const nr = refs.get(i)
+      const t = (declared[i] || '').trim() || 'Object'
+      if (nr) {
+        const finder = nr.kind === 'tree' ? 'Json.findTreeNode' : 'Json.findListNode'
+        return `    ${t} _a${i} = ${finder}(_a${nr.pool}, Json.toInt(a.get(${i})));`
+      }
+      return `    ${t} _a${i} = ${javaLoadFrom(parseType(p.type), `a.get(${i})`)};`
+    }).join('\n')
+    const args = params.map((_, i) => `_a${i}`).join(', ')
     mainBody = `
     String raw = new String(System.in.readAllBytes());
     String[] lines = raw.split("\\n");
     List<Object> a = new ArrayList<>();
     for (String l : lines) { if (!l.trim().isEmpty()) a.add(Json.parse(l)); }
     ${className} obj = new ${className}();
+${lds}
     Object result = obj.${fnName}(${args});
-    System.out.println(Json.ser(result));
+${nodeValueReturn(problem)
+  ? '    if (result == null) System.out.println("null"); else System.out.println(Json.ser(((TreeNode) result).val));'
+  : '    System.out.println(Json.ser(result));'}
 `
   }
 
@@ -600,7 +786,7 @@ ${mainBody}
   return {
     files,
     solutionFile: className + '.java',
-    compile: { cmd: 'javac', args: [className + '.java', 'Main.java'] },
+    compile: { cmd: 'javac', args: ['-encoding', 'UTF-8', className + '.java', 'Main.java'] },
     run: { cmd: 'java', args: ['Main'] },
     className
   }
@@ -810,12 +996,23 @@ int main(){
   return 0;
 }`
   } else {
+    const refs = new Map(nodeRefParams(problem, sourceCode, 'cpp').map((r) => [r.index, r]))
     const decls = problem.params.map((p, i) => {
       const shape = parseType(p.type)
+      const nr = refs.get(i)
+      if (nr) {
+        // 元数据是 integer、签名是 TreeNode*/ListNode*：从节点池里按值找
+        const finder = nr.kind === 'tree' ? '_lcFindTree' : '_lcFindList'
+        return `  auto _a${i} = ${finder}(_a${nr.pool}, JVal::parse(argvRaw[${i}]).asInt());`
+      }
       // 先解析到局部左值变量：兼容 vector<int>& 等非 const 引用参数
       return `  auto _a${i} = ${cppLoadArg(shape, `JVal::parse(argvRaw[${i}])`)};`
     }).join('\n')
     const args = problem.params.map((_, i) => `_a${i}`).join(', ')
+    // 返回节点引用（如 LCA 返回那个节点）时按节点值比较，而不是打印整棵树
+    const out = nodeValueReturn(problem)
+      ? `  cout << (result ? to_string(result->val) : string("null"));`
+      : `  cout << _ser(result);`
     driver = `
 int main(){
   string raw; { char c; while(cin.get(c)) raw += c; }
@@ -823,7 +1020,7 @@ int main(){
 ${decls}
   ${className} obj;
   auto result = obj.${fn}(${args});
-  cout << _ser(result);
+${out}
   return 0;
 }`
   }
@@ -875,6 +1072,9 @@ ListNode* _buildList(const vector<int>& a){ ListNode* d = new ListNode(); ListNo
 ListNode* _nodeAt(ListNode* h, int idx){ for(int i=0;i<idx && h;i++) h = h->next; return h; }
 struct TreeNode { int val; TreeNode* left; TreeNode* right; TreeNode() : val(0), left(nullptr), right(nullptr) {} TreeNode(int x) : val(x), left(nullptr), right(nullptr) {} TreeNode(int x, TreeNode* l, TreeNode* r) : val(x), left(l), right(r) {} };
 TreeNode* _treenode(const JVal& v){ if(v.arr.empty() || v.arr[0].t==JVal::NUL) return nullptr; TreeNode* root = new TreeNode(v.arr[0].asInt()); queue<TreeNode*> q; q.push(root); size_t i=1; auto put=[&](TreeNode* &child){ if(i<v.arr.size() && v.arr[i].t!=JVal::NUL){ child = new TreeNode(v.arr[i].asInt()); q.push(child);} i++; }; while(!q.empty()){ TreeNode* p=q.front(); q.pop(); put(p->left); put(p->right); } return root; }
+// 「按值引用的节点」：在树/链表里找出值为 v 的那个节点（LCA 这类题传的是树里的节点）
+TreeNode* _lcFindTree(TreeNode* root, int v){ if(!root) return nullptr; queue<TreeNode*> q; q.push(root); while(!q.empty()){ TreeNode* p=q.front(); q.pop(); if(p->val==v) return p; if(p->left) q.push(p->left); if(p->right) q.push(p->right);} return nullptr; }
+ListNode* _lcFindList(ListNode* h, int v){ while(h){ if(h->val==v) return h; h=h->next; } return nullptr; }
 `
 
 const CPP_SERIALIZER = `
