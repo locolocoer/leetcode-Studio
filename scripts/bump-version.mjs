@@ -43,7 +43,8 @@ for (const file of ['README.md', 'RELEASE.md']) {
   const next = text
     .replace(/(版本：\s*v?)[\d.]+/g, `$1${version}`)
     .replace(/(当前版本：\*\*v?)[\d.]+/g, `$1${version}`)
-    .replace(/(LeetCode Studio-)[\d.]+(-setup|-portable)/g, `$1${version}$2`)
+    .replace(/(LeetCode[- ]Studio[- ])[\d.]+(-setup|-portable)/g, `$1${version}$2`)
+    .replace(/^(# LeetCode Studio )[\d.]+/m, `$1${version}`)
   if (next !== text) {
     writeFileSync(p, next)
     console.log(`[${file}] ok`)
