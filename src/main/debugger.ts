@@ -420,9 +420,12 @@ export class DebugSession {
       this.snap.pausedAt = e.line
       this.snap.frame = e.frame
       this.snap.error = undefined
-    } else if (e.kind === 'exception') {
+    } else if (e.kind === 'exception' || e.kind === 'error') {
+      // 关键：调试器报错必须反映到状态上，否则界面会一直停在「运行中」看着像卡死
       this.snap.status = 'error'
-      this.snap.error = e.message
+      this.snap.error = e.message || '调试器出错'
+    } else if (e.kind === 'finished') {
+      this.snap.status = 'finished'
     }
     this.cb.onEvent?.(e)
   }

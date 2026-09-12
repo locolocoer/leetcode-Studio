@@ -65,6 +65,7 @@ export function startGdbRunner(o: NativeOpts): NativeRunner {  let child: ChildP
     buf = lines.pop() || ''
     for (const raw of lines) {
       const line = raw.replace(/\r/g, '')
+      if (process.env.LC_GDB_DEBUG) console.error('[mi] ' + line)
       for (let i = 0; i < waiters.length; i++) {
         const m = waiters[i].re.exec(line)
         if (m) {
@@ -95,6 +96,13 @@ export function startGdbRunner(o: NativeOpts): NativeRunner {  let child: ChildP
     if (child && child.stdin && child.exitCode === null && !done) {
       try { child.stdin.write(s) } catch {}
     }
+  }
+
+  /** 先注册等待再发送命令，避免响应早于 waiter 注册而丢失 */
+  async function sendWait(cmd: string, re: RegExp, ms = 9000): Promise<RegExpExecArray | null> {
+    const p = waitFor(re, ms)
+    send(cmd)
+    return p
   }
 
   child = spawn('gdb', ['-q', '-i=mi3', o.exe], {
@@ -281,11 +289,15 @@ export function startGdbRunner(o: NativeOpts): NativeRunner {  let child: ChildP
 
   // advance until a stop in the user file or the program exits
   async function waitUserStop(): Promise<void> {
-    for (let i = 0; i < 80; i++) {
-      const p = waitFor(STOP)
+    // 用「继续」在驱动代码里穿行：给总时间预算，避免无限等待
+    const deadline = Date.now() + 60_000
+    let count = 0
+    while (Date.now() < deadline && count < 200) {
+      const p = waitFor(STOP, 15000)
       send('-exec-continue\n')
       const m = await p
-      if (!m) { emit({ kind: 'error', line: 0, message: 'gdb timeout' }); return }
+      if (!m) { emit({ kind: 'error', line: 0, message: 'gdb 无响应（继续执行超时）。' }); return }
+      count++
       const st = parseStopped(m[0])
       if (st.reason === 'exited-normally' || st.reason === 'exited') {
         emit({ kind: 'finished', line: 0 })
@@ -296,25 +308,21 @@ export function startGdbRunner(o: NativeOpts): NativeRunner {  let child: ChildP
         return
       }
     }
-    emit({ kind: 'error', line: 0, message: 'gdb: never reached user code' })
+    emit({ kind: 'error', line: 0, message: 'gdb: 始终没有回到你的代码，已停止。' })
   }
 
   function bootstrap() {
     queue = queue.then(async () => {
-      // 打开 pretty-printing 并加载 LeetCode 结构（链表/树）的 printer
-      send('-gdb-set print pretty on\n')
-      await waitFor(/^\^done/)
-      send('-enable-pretty-printing\n')
-      await waitFor(/^\^done/)
-      send('-interpreter-exec console "set print elements 32"\n')
-      await waitFor(/^\^done/)
+      // 注意：必须「先注册等待再发送」，否则响应可能在 waiter 注册前就到达并被丢弃，
+      // 之后每个命令都要白等一次超时（表现为点击单步/步过长时间无反应）。
+      await sendWait('-gdb-set print pretty on\n', /^\^done/)
+      await sendWait('-enable-pretty-printing\n', /^\^done/)
+      await sendWait('-interpreter-exec console "set print elements 32"\n', /^\^done/)
       if (o.initialBps.length === 0) {
-        send('-break-insert ' + o.methodName + '\n')
-        await waitFor(/^\^done,bkpt=.*/)
+        await sendWait('-break-insert ' + o.methodName + '\n', /^\^done,bkpt=.*/)
       }
       for (const b of o.initialBps) {
-        send('-break-insert -f ' + userFile(o.lang) + ':' + b + '\n')
-        await waitFor(/^\^done,bkpt=.*/)
+        await sendWait('-break-insert -f ' + userFile(o.lang) + ':' + b + '\n', /^\^done,bkpt=.*/)
       }
       const p = waitFor(STOP)
       send('-interpreter-exec console "run < input.txt"\n')
@@ -333,47 +341,41 @@ export function startGdbRunner(o: NativeOpts): NativeRunner {  let child: ChildP
     })
   }
 
-  function stepInto(): void {
-    queue = queue.then(async () => {
-      for (let i = 0; i < 80; i++) {
-        const p = waitFor(STOP)
-        send('-exec-step\n')
-        const m = await p
-        if (!m) break
-        if (process.env.LC_GDB_DEBUG) console.error('[step ' + i + '] ' + m[0].slice(0, 180))
-        const st = parseStopped(m[0])
-        if (st.reason === 'exited-normally' || st.reason === 'exited') {
-          emit({ kind: 'finished', line: 0 })
-          return
-        }
-        if (st.reason === 'breakpoint-hit' || (st.line != null && fileIsUser(st.file, o.lang))) {
-          await stopInUser(st, 'line')
-          return
-        }
+  // 单步/步过共用的推进循环：总预算 + 单次响应超时，避免「点了没反应」长时间挂着
+  async function advance(cmd: '-exec-step' | '-exec-next', label: '步进' | '步过'): Promise<void> {
+    const deadline = Date.now() + 25_000   // 总预算：跨过 STL 内部最多给 25 秒
+    let count = 0
+    while (Date.now() < deadline && count < 300) {
+      const p = waitFor(STOP, 8000)
+      send(cmd + '\n')
+      const m = await p
+      if (!m) {
+        emit({ kind: 'error', line: 0, message: `gdb 无响应，${label}已中断。可点「停止」后重试。` })
+        return
       }
-      emit({ kind: 'error', line: 0, message: 'step timeout' })
+      count++
+      const st = parseStopped(m[0])
+      if (st.reason === 'exited-normally' || st.reason === 'exited') {
+        emit({ kind: 'finished', line: 0 })
+        return
+      }
+      if (st.reason === 'breakpoint-hit' || (st.line != null && fileIsUser(st.file, o.lang))) {
+        await stopInUser(st, label === '步过' ? 'line' : 'line')
+        return
+      }
+    }
+    emit({
+      kind: 'error', line: 0,
+      message: `${label}超时：这一行可能进入了很深的库代码（如 STL 内部）。可以改用「继续」跑到断点，或把断点放在更外层。`
     })
   }
 
+  function stepInto(): void {
+    queue = queue.then(() => advance('-exec-step', '步进'))
+  }
+
   function nextOver(): void {
-    queue = queue.then(async () => {
-      for (let i = 0; i < 80; i++) {
-        const p = waitFor(STOP)
-        send('-exec-next\n')
-        const m = await p
-        if (!m) break
-        const st = parseStopped(m[0])
-        if (st.reason === 'exited-normally' || st.reason === 'exited') {
-          emit({ kind: 'finished', line: 0 })
-          return
-        }
-        if (st.reason === 'breakpoint-hit' || (st.line != null && fileIsUser(st.file, o.lang))) {
-          await stopInUser(st, 'line')
-          return
-        }
-      }
-      emit({ kind: 'error', line: 0, message: 'over timeout' })
-    })
+    queue = queue.then(() => advance('-exec-next', '步过'))
   }
 
   bootstrap()
@@ -386,8 +388,7 @@ export function startGdbRunner(o: NativeOpts): NativeRunner {  let child: ChildP
     },
     addBreakpoint: (line) => {
       queue = queue.then(async () => {
-        send('-break-insert -f ' + userFile(o.lang) + ':' + line + '\n')
-        await waitFor(/^\^done,bkpt=.*/)
+        await sendWait('-break-insert -f ' + userFile(o.lang) + ':' + line + '\n', /^\^done,bkpt=.*/)
       })
     },
     stop: () => {
@@ -446,8 +447,8 @@ export function startJdbRunner(o: JdbOpts): NativeRunner {
   const exitText = /exited|退出|应用/i
 
   // Collect new log lines until one matches pred, then return the whole new segment.
-  async function waitSeg(pred: (seg: string[]) => boolean, timeoutMs = 15000): Promise<string[]> {
-    const base = log.length
+  // base 可在发送命令前先取好，避免响应早于基准而漏读。
+  async function waitSeg(pred: (seg: string[]) => boolean, timeoutMs = 15000, base = log.length): Promise<string[]> {
     const t0 = Date.now()
     while (Date.now() - t0 < timeoutMs) {
       await sleep(150)
@@ -545,9 +546,11 @@ export function startJdbRunner(o: JdbOpts): NativeRunner {
 
   // advance with a command until a user stop / exit
   async function advance(cmd: string): Promise<void> {
-    for (let i = 0; i < 60; i++) {
+    const deadline = Date.now() + 60_000
+    for (let i = 0; i < 200 && Date.now() < deadline; i++) {
+      const base = log.length           // 先取基准，再发命令，避免漏读响应
       send(cmd)
-      const seg = await waitSeg((s) => segHasStop(s) || segHasExit(s))
+      const seg = await waitSeg((s) => segHasStop(s) || segHasExit(s), 15000, base)
       if (segHasExit(seg) && !segHasStop(seg)) {
         emit({ kind: 'finished', line: 0 })
         return
