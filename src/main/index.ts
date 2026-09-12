@@ -30,7 +30,7 @@ let lc: LeetCodeClient
 
 // ---------------------------------------------------------------- 自动更新
 // 与 audioPlayer 同一套流程：优先阿里云 OSS（国内快），失败自动回退 GitHub Release。
-const OSS_BASE = 'https://leetcode-studio.oss-cn-beijing.aliyuncs.com/'
+const OSS_BASE = 'https://leetcode.oss-cn-beijing.aliyuncs.com/'
 const GH_OWNER = 'locolocoer'
 const GH_REPO = 'leetcode-Studio'
 

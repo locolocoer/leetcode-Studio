@@ -118,8 +118,10 @@ npm run toolchains            # 按固定版本下载/裁剪；已存在则跳�
 ### 自动更新
 
 - 客户端用 `electron-updater`：启动 8 秒后自动检查，**自动后台下载**，退出时自动安装；设置页「关于与更新」可手动检查与「重启并安装」，主界面在下载完成时弹出提示条。
-- 更新源**优先阿里云 OSS**（`https://leetcode-studio.oss-cn-beijing.aliyuncs.com/`），失败自动回退 GitHub Release；未配置 OSS 时直接用 GitHub。
-- 启用 OSS：仓库 `Settings → Secrets` 添加 `OSS_ACCESS_KEY_ID` / `OSS_ACCESS_KEY_SECRET`（可选变量 `OSS_BUCKET`，默认 `leetcode-studio`），workflow 的 OSS 步骤会自动启用。
+- 更新源**优先阿里云 OSS**（`https://leetcode.oss-cn-beijing.aliyuncs.com/`），失败自动回退 GitHub Release；未配置 OSS 时直接用 GitHub。
+- 启用 OSS：仓库 `Settings → Secrets` 添加 `OSS_ACCESS_KEY_ID` / `OSS_ACCESS_KEY_SECRET`（可选变量 `OSS_BUCKET`，默认 `leetcode`；`OSS_ENDPOINT` 默认 `oss-cn-beijing.aliyuncs.com`），workflow 的 OSS 步骤会自动启用。
+  - 上传时带 `--acl public-read`，并有一个「更新源可匿名读取」探活步骤；若桶开启了「阻止公共访问」，该步骤会失败并提示。
+  - 改桶名/区域时，`src/main/index.ts` 里的 `OSS_BASE` 要同步改。
 
 ## 📄 License
 

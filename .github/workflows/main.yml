@@ -129,12 +129,13 @@ jobs:
         env:
           OSS_ACCESS_KEY_ID: ${{ secrets.OSS_ACCESS_KEY_ID }}
           OSS_ACCESS_KEY_SECRET: ${{ secrets.OSS_ACCESS_KEY_SECRET }}
-          OSS_BUCKET: ${{ vars.OSS_BUCKET || 'leetcode-studio' }}
+          OSS_BUCKET: ${{ vars.OSS_BUCKET || 'leetcode' }}
+          OSS_ENDPOINT: ${{ vars.OSS_ENDPOINT || 'oss-cn-beijing.aliyuncs.com' }}
         run: |
           set -e
           curl -sL https://gosspublic.alicdn.com/ossutil/1.7.18/ossutil64 -o ossutil
           chmod +x ossutil
-          ./ossutil config -e oss-cn-beijing.aliyuncs.com -i "$OSS_ACCESS_KEY_ID" -k "$OSS_ACCESS_KEY_SECRET"
+          ./ossutil config -e "$OSS_ENDPOINT" -i "$OSS_ACCESS_KEY_ID" -k "$OSS_ACCESS_KEY_SECRET"
           VERSION="${GITHUB_REF_NAME#v}"
           mkdir -p "artifacts/v${VERSION}"
           # latest*.yml 留在根目录作为稳定的更新指针，其余产物按版本归档
@@ -149,4 +150,24 @@ jobs:
             [ -f "$yml" ] || continue
             sed -i -E "s#(url|path): #\1: v${VERSION}/#" "$yml"
           done
-          ./ossutil cp -rf artifacts/ "oss://${OSS_BUCKET}/"
+          # --acl public-read：客户端用匿名 GET 下载更新，对象必须可公开读取
+          ./ossutil cp -rf artifacts/ "oss://${OSS_BUCKET}/" --acl public-read
+
+      # 更新源必须匿名可读，否则客户端下载 403；这里直接探活，尽早暴露权限问题
+      - name: Verify OSS feed is publicly readable
+        if: env.OSS_ACCESS_KEY_ID != ''
+        env:
+          OSS_ACCESS_KEY_ID: ${{ secrets.OSS_ACCESS_KEY_ID }}
+          OSS_BUCKET: ${{ vars.OSS_BUCKET || 'leetcode' }}
+          OSS_ENDPOINT: ${{ vars.OSS_ENDPOINT || 'oss-cn-beijing.aliyuncs.com' }}
+        run: |
+          set -e
+          URL="https://${OSS_BUCKET}.${OSS_ENDPOINT}/latest.yml"
+          echo "check $URL"
+          CODE=$(curl -s -o /tmp/latest.yml -w '%{http_code}' "$URL")
+          echo "HTTP $CODE"
+          cat /tmp/latest.yml
+          if [ "$CODE" != "200" ]; then
+            echo "::error::OSS 更新源不可匿名读取（HTTP $CODE）。请把桶/对象设为公共读，或关闭「阻止公共访问」。"
+            exit 1
+          fi
