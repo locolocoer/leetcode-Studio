@@ -1,10 +1,11 @@
 import { useState } from 'react'
-import type { Language, Settings, ToolchainStatus } from '../../../shared/types'
+import type { Language, Settings, ToolchainStatus, UpdateStatus } from '../../../shared/types'
 import UpdateCard from './UpdateCard'
 
 interface Props {
   settings: Settings
   toolchains: Record<Language, ToolchainStatus>
+  updateStatus: UpdateStatus
   onSave: (s: Settings) => void
   onDetect: (s?: Settings) => void
 }
@@ -16,7 +17,7 @@ const LANGS: { key: Language; name: string; hint: string }[] = [
   { key: 'c', name: 'C', hint: 'gcc / clang 路径' }
 ]
 
-export default function SettingsPanel({ settings, toolchains, onSave, onDetect }: Props) {
+export default function SettingsPanel({ settings, toolchains, updateStatus, onSave, onDetect }: Props) {
   const [pathDrafts, setPathDrafts] = useState<Partial<Record<Language, string>>>({ ...settings.toolpaths })
   const [saved, setSaved] = useState(false)
 
@@ -113,7 +114,7 @@ export default function SettingsPanel({ settings, toolchains, onSave, onDetect }
       <button className="btn primary" onClick={save}>{saved ? '✓ 已保存' : '保存设置'}</button>
 
       <div style={{ height: 14 }} />
-      <UpdateCard />
+      <UpdateCard status={updateStatus} />
     </div>
   )
 }

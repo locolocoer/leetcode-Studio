@@ -1,24 +1,26 @@
 import { useEffect, useState } from 'react'
 import type { AppInfo, UpdateStatus } from '../../../shared/types'
 
+interface Props {
+  /** 由 App 订阅并传入，保证切到设置页时能看到最近一次检查结果 */
+  status: UpdateStatus
+}
+
 /** 设置面板里的「关于 / 更新」卡片：检查更新、显示进度、重启安装 */
-export default function UpdateCard() {
+export default function UpdateCard({ status }: Props) {
   const [info, setInfo] = useState<AppInfo | null>(null)
-  const [status, setStatus] = useState<UpdateStatus>({ state: 'idle' })
   const [busy, setBusy] = useState(false)
 
   useEffect(() => {
     window.api.app.info().then(setInfo).catch(() => {})
-    const off = window.api.updater.onStatus((s) => {
-      setStatus(s)
-      if (s.state !== 'checking' && s.state !== 'downloading') setBusy(false)
-    })
-    return off
   }, [])
+
+  useEffect(() => {
+    if (status.state !== 'checking' && status.state !== 'downloading') setBusy(false)
+  }, [status.state])
 
   const check = async () => {
     setBusy(true)
-    setStatus({ state: 'checking' })
     await window.api.updater.check()
     setBusy(false)
   }
@@ -29,8 +31,8 @@ export default function UpdateCard() {
       case 'available': return `发现新版本 v${status.version}，正在后台下载…`
       case 'downloading': return `下载中 ${status.percent ?? 0}%`
       case 'downloaded': return `新版本 v${status.version} 已就绪，重启即可安装`
-      case 'not-available': return '已是最新版本'
-      case 'dev': return '开发模式不检查更新（打包安装版才生效）'
+      case 'not-available': return '已是最新版本 ✓'
+      case 'dev': return '开发模式不检查更新（安装版打包后才生效）'
       case 'error': return `检查更新失败：${status.message || '未知错误'}`
       default: return ''
     }
@@ -45,7 +47,9 @@ export default function UpdateCard() {
     <div className="setting-card">
       <h3>关于与更新</h3>
       <div className="desc">
-        {info ? `LeetCode Studio v${info.version}${info.commit && info.commit !== 'unknown' ? ` (${info.commit})` : ''}` : '正在读取版本…'}
+        {info
+          ? `LeetCode Studio v${info.version}${info.commit && info.commit !== 'unknown' ? ` (${info.commit})` : ''}`
+          : '正在读取版本…'}
         {info && (
           <span style={{ color: 'var(--text-faint)' }}>
             {' '}· Electron {info.electron} · Chromium {info.chrome} · Node {info.node}
@@ -61,15 +65,18 @@ export default function UpdateCard() {
             重启并安装
           </button>
         )}
-        {(status.state === 'available' || status.state === 'downloading') && (
-          <span style={{ fontSize: 12.5, color: tone }}>{text}</span>
+        {text && (
+          <span style={{ fontSize: 12.5, color: tone }}>
+            {text}
+            {status.state === 'downloading' && (
+              <span className="update-progress"><i style={{ width: `${status.percent ?? 0}%` }} /></span>
+            )}
+          </span>
         )}
       </div>
-      {text && status.state !== 'available' && status.state !== 'downloading' && (
-        <div style={{ fontSize: 12.5, color: tone, marginTop: 8 }}>{text}</div>
-      )}
       <div style={{ fontSize: 12, color: 'var(--text-faint)', marginTop: 8, lineHeight: 1.7 }}>
-        更新源：优先阿里云 OSS，失败自动回退 GitHub Release。新版本会自动后台下载，安装包重启后生效。
+        更新源：优先阿里云 OSS，失败自动回退 GitHub Release。新版本会自动后台下载，重启应用后生效。
+        日志：<code>%APPDATA%\leetcode-studio\.runtime\updater.log</code>
       </div>
     </div>
   )

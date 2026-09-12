@@ -600,6 +600,7 @@ export default function App() {
               <SettingsPanel
                 settings={settings}
                 toolchains={toolchains}
+                updateStatus={updateState}
                 onSave={(s) => { window.api.settings.save(s).then(() => loadAll(s)) }}
                 onDetect={(s) => window.api.toolchains.detect(s).then(setToolchains)}
               />

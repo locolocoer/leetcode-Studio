@@ -1,6 +1,6 @@
 import { app, BrowserWindow, ipcMain, shell, clipboard, dialog, session, Menu } from 'electron'
 import { join } from 'path'
-import { writeFileSync, readFileSync, existsSync } from 'fs'
+import { writeFileSync, readFileSync, existsSync, appendFileSync } from 'fs'
 import { autoUpdater } from 'electron-updater'
 import type {
   AppInfo, CatalogEntry, Language, Problem, RunResult, Settings, SolutionOrderBy, TestCase, UpdateStatus
@@ -16,6 +16,11 @@ import { DebugSession } from './debugger'
 import { LeetCodeClient, baseOf } from './leetcode'
 
 declare const __COMMIT__: string
+
+// QA/排查用：设置 LC_UI_DEBUG_PORT 后可用 Chrome DevTools 协议检查打包版界面
+if (process.env.LC_UI_DEBUG_PORT) {
+  app.commandLine.appendSwitch('remote-debugging-port', String(process.env.LC_UI_DEBUG_PORT))
+}
 
 let mainWindow: BrowserWindow | null = null
 let store: Store
@@ -33,6 +38,13 @@ function sendUpdateStatus(payload: UpdateStatus): void {
   if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('update:status', payload)
 }
 
+/** 更新日志写到 <runtimeDir>/updater.log，方便排查“检查不到更新”一类问题 */
+function logUpdater(msg: string): void {
+  try {
+    if (runtimeDir) appendFileSync(join(runtimeDir, 'updater.log'), `[${new Date().toISOString()}] ${msg}\n`)
+  } catch { /* ignore */ }
+}
+
 let currentFeed: 'oss' | 'github' = 'oss'
 
 function useOssFeed(): void {
@@ -48,22 +60,39 @@ function useGitHubFeed(): void {
 function setupAutoUpdater(): void {
   autoUpdater.autoDownload = true
   autoUpdater.autoInstallOnAppQuit = true
-  autoUpdater.logger = null
+  autoUpdater.logger = {
+    info: (m: unknown) => logUpdater('INFO  ' + String(m)),
+    warn: (m: unknown) => logUpdater('WARN  ' + String(m)),
+    error: (m: unknown) => logUpdater('ERROR ' + String(m)),
+    debug: (m: unknown) => logUpdater('DEBUG ' + String(m))
+  } as never
 
   useOssFeed()
+  logUpdater(`检查更新：feed=${currentFeed} ${OSS_BASE}`)
 
   autoUpdater.on('checking-for-update', () => sendUpdateStatus({ state: 'checking' }))
-  autoUpdater.on('update-available', (info) => sendUpdateStatus({ state: 'available', version: info.version }))
-  autoUpdater.on('update-not-available', () => sendUpdateStatus({ state: 'not-available' }))
+  autoUpdater.on('update-available', (info) => {
+    logUpdater(`发现新版本 v${info.version}，开始下载`)
+    sendUpdateStatus({ state: 'available', version: info.version })
+  })
+  autoUpdater.on('update-not-available', () => {
+    logUpdater('已是最新版本')
+    sendUpdateStatus({ state: 'not-available' })
+  })
   autoUpdater.on('download-progress', (p) =>
     sendUpdateStatus({ state: 'downloading', percent: Math.round(p.percent), message: `${p.transferred}/${p.total}` }))
-  autoUpdater.on('update-downloaded', (info) => sendUpdateStatus({ state: 'downloaded', version: info.version }))
+  autoUpdater.on('update-downloaded', (info) => {
+    logUpdater(`已下载 v${info.version}`)
+    sendUpdateStatus({ state: 'downloaded', version: info.version })
+  })
   autoUpdater.on('error', (err) => {
     const msg = err && err.message ? err.message : String(err)
+    logUpdater(`错误（feed=${currentFeed}）：${msg}`)
     if (currentFeed === 'oss') {
       // OSS 未配置 / 网络不通 → 回退到 GitHub Release
       console.log(`[Updater] OSS 源失败，回退到 GitHub：${msg}`)
       useGitHubFeed()
+      logUpdater('回退到 GitHub Release')
       autoUpdater.checkForUpdates().catch(() => sendUpdateStatus({ state: 'error', message: msg }))
       return
     }
