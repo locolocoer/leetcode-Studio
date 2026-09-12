@@ -27,6 +27,7 @@ export default function App() {
   const [tests, setTests] = useState<TestCase[]>([])
   const [result, setResult] = useState<RunResult | null>(null)
   const [running, setRunning] = useState(false)
+  const [runNote, setRunNote] = useState<string | null>(null)
   const [toolchains, setToolchains] = useState<Record<Language, ToolchainStatus>>({} as any)
   const [settings, setSettings] = useState<Settings>({ toolpaths: {}, timeLimitMs: 4000, theme: 'dark' })
   const [rightTab, setRightTab] = useState<'run' | 'debug' | 'ai' | 'settings'>('run')
@@ -189,13 +190,17 @@ export default function App() {
   const runTests = async () => {
     if (!active) return
     setRunning(true)
+    setRunNote(null)
     setRightTab('run')
+    // 主进程在「AI 生成判题模板」等阶段会推送提示，这里即时显示
+    const off = window.api.ai.onRunNote((m) => setRunNote(m))
     try {
       const r = await window.api.run.tests(active, language, activeCode, tests)
       setResult(r)
     } catch (e: any) {
       setResult({ ok: false, cases: [], error: String(e?.message || e) })
     } finally {
+      off()
       setRunning(false)
     }
   }
@@ -581,7 +586,7 @@ export default function App() {
             <div className={`right-tab ${rightTab === 'settings' ? 'active' : ''}`} onClick={() => setRightTab('settings')}>⚙ 设置</div>
           </div>
           <div className="right-body">
-            {rightTab === 'run' && <RunPanel result={result} running={running} />}
+            {rightTab === 'run' && <RunPanel result={result} running={running} note={runNote} />}
             {rightTab === 'debug' && (
               <DebugPanel
                 snapshot={debugSnap}

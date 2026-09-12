@@ -71,6 +71,8 @@ export interface RunResult {
   timedOut?: boolean
   error?: string
   totalTimeMs?: number
+  /** 本次是否用了 AI 生成的判题模板 */
+  aiHarness?: { used: boolean; note?: string }
 }
 
 export interface ToolchainStatus {
@@ -159,6 +161,8 @@ export interface Settings {
   aiApiKey?: string
   /** 严格模式：绝不给出完整题解（默认开启） */
   aiNoAnswer?: boolean
+  /** 判题模板不适配时，自动让 AI 生成编译模板（默认开启，需配置 API Key） */
+  autoHarness?: boolean
 }
 
 // ---- AI 助手 ----

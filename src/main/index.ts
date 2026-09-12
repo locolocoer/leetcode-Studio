@@ -7,6 +7,7 @@ import type {
 } from '../shared/types'
 import { detectAll, detectToolchain } from './toolchain'
 import { runAll, normalizeManualExpected, type RunnerContext } from './runner'
+import { initAiHarnessCache, clearHarnessCache } from './aiHarness'
 import {
   fetchProblemList, fetchProblemDetail, fetchDaily, fetchProblemListCatalog,
   fetchSolutionList, fetchSolutionDetail
@@ -155,7 +156,9 @@ function ctx(): RunnerContext {
   return {
     toolchains: detectAll(store.loadSettings()),
     settings: store.loadSettings(),
-    runtimeDir
+    runtimeDir,
+    // 让界面能看到「正在让 AI 生成判题模板」这类进度
+    onNote: (msg: string) => mainWindow?.webContents.send('run:note', msg)
   }
 }
 
@@ -238,6 +241,8 @@ function registerIpc() {
   ipcMain.handle('clipboard:text', () => a.clipboardText())
   ipcMain.handle('open:external', (_e, url: string) => a.openExternal(url))
   ipcMain.handle('runtime:dir', () => runtimeDir)
+  // 清掉 AI 生成的判题模板缓存（换模型/结果不对时可手动重来）
+  ipcMain.handle('ai:clearHarness', () => { clearHarnessCache(); return true })
 
   // --- AI 做题助手（主进程持有 Key 并组装「不给答案」的提示词）---
   let aiAbort: (() => void) | null = null
@@ -439,6 +444,8 @@ app.whenReady().then(() => {
   try { writeFileSync(join(runtimeDir, '.keep'), '') } catch {}
   store = new Store(join(base, '.leetcode-studio'))
   lc = new LeetCodeClient(join(base, '.leetcode-studio'))
+  // AI 生成的判题模板缓存（按题目 + 语言 + 签名保存，验证通过才会写入）
+  initAiHarnessCache(join(base, '.leetcode-studio'))
   if (!existsSync(join(base, '.leetcode-studio', 'seeded'))) {
     seedStore()
     try { writeFileSync(join(base, '.leetcode-studio', 'seeded'), '1') } catch {}

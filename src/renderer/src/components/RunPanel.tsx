@@ -3,11 +3,31 @@ import type { RunResult } from '../../../shared/types'
 interface Props {
   result: RunResult | null
   running: boolean
+  /** 运行过程中的提示（如「AI 正在生成判题模板」） */
+  note?: string | null
 }
 
-export default function RunPanel({ result, running }: Props) {
+function AiHarnessBadge({ result }: { result: RunResult }) {
+  const info = result.aiHarness
+  if (!info) return null
+  return (
+    <div
+      className="ai-harness-badge"
+      title="本地判题模板不适配这道题时，会用 AI 生成一份驱动模板；只有通过本题全部用例才会采用，并按题目缓存起来"
+    >
+      {info.used ? '🤖 使用了 AI 生成的判题模板' : '🤖 已尝试 AI 生成判题模板（未采用）'}
+      {info.note ? <span style={{ opacity: 0.75 }}> · {info.note}</span> : null}
+    </div>
+  )
+}
+
+export default function RunPanel({ result, running, note }: Props) {
   if (running) {
-    return <div className="loader">正在编译并运行…</div>
+    return (
+      <div className="loader">
+        {note || '正在编译并运行…'}
+      </div>
+    )
   }
   if (!result) {
     return (
@@ -21,18 +41,25 @@ export default function RunPanel({ result, running }: Props) {
   if (result.compileFailed) {
     return (
       <div>
+        <AiHarnessBadge result={result} />
         <div className="error-text" style={{ marginBottom: 12, fontSize: 14 }}>编译失败</div>
         <pre className="debug-output" style={{ maxHeight: 500 }}>{result.compileOutput || '无输出'}</pre>
       </div>
     )
   }
   if (result.error) {
-    return <div className="error-text">{result.error}</div>
+    return (
+      <div>
+        <AiHarnessBadge result={result} />
+        <div className="error-text">{result.error}</div>
+      </div>
+    )
   }
   const passed = result.cases.filter((c) => c.passed).length
   const allPass = passed === result.cases.length
   return (
     <div>
+      <AiHarnessBadge result={result} />
       <div className="debug-status">
         <span style={{ color: allPass ? 'var(--green)' : 'var(--red)', fontWeight: 600 }}>
           {allPass ? '✓ ' : '✗ '}{passed} / {result.cases.length} 通过

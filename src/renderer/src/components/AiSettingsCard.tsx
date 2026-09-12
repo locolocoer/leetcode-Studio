@@ -20,18 +20,20 @@ export default function AiSettingsCard({ settings, onSave }: Props) {
   const [model, setModel] = useState(settings.aiModel || 'deepseek-chat')
   const [key, setKey] = useState(settings.aiApiKey || '')
   const [noAnswer, setNoAnswer] = useState(settings.aiNoAnswer !== false)
+  const [autoHarness, setAutoHarness] = useState(settings.autoHarness !== false)
   const [testing, setTesting] = useState(false)
   const [testMsg, setTestMsg] = useState<{ ok: boolean; text: string } | null>(null)
+  const [clearMsg, setClearMsg] = useState('')
 
   const save = () => {
-    onSave({ ...settings, aiBaseUrl: baseUrl.trim(), aiModel: model.trim(), aiApiKey: key.trim(), aiNoAnswer: noAnswer })
+    onSave({ ...settings, aiBaseUrl: baseUrl.trim(), aiModel: model.trim(), aiApiKey: key.trim(), aiNoAnswer: noAnswer, autoHarness })
   }
 
   const test = async () => {
     setTesting(true)
     setTestMsg(null)
     // 先落盘再自检，保证主进程用的是当前填写的配置
-    onSave({ ...settings, aiBaseUrl: baseUrl.trim(), aiModel: model.trim(), aiApiKey: key.trim(), aiNoAnswer: noAnswer })
+    onSave({ ...settings, aiBaseUrl: baseUrl.trim(), aiModel: model.trim(), aiApiKey: key.trim(), aiNoAnswer: noAnswer, autoHarness })
     const r = await window.api.ai.test()
     setTestMsg({ ok: r.ok, text: r.message })
     setTesting(false)
@@ -76,6 +78,27 @@ export default function AiSettingsCard({ settings, onSave }: Props) {
           </span>
         </label>
       </div>
+      <div className="setting-row">
+        <label>判题模板</label>
+        <label className="toggle">
+          <input type="checkbox" checked={autoHarness} onChange={(e) => setAutoHarness(e.target.checked)} />
+          <span style={{ fontSize: 12.5, color: 'var(--text-dim)' }}>
+            遇到没见过的题型时，让 AI 生成编译模板（必须通过本题全部用例才会采用，并按题目缓存）
+          </span>
+        </label>
+      </div>
+      {autoHarness && (
+        <div className="setting-row">
+          <label />
+          <button
+            className="btn sm ghost"
+            onClick={async () => { await window.api.ai.clearHarness(); setClearMsg('已清空模板缓存，下次运行会重新生成') }}
+          >
+            清空 AI 模板缓存
+          </button>
+          {clearMsg && <span style={{ fontSize: 12, color: 'var(--text-faint)' }}>{clearMsg}</span>}
+        </div>
+      )}
 
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
         <button className="btn sm" onClick={test} disabled={testing}>{testing ? '测试中…' : '保存并测试连接'}</button>

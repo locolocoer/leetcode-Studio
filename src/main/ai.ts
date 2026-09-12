@@ -198,6 +198,45 @@ function describeHttpError(status: number, body: string): string {
   return `请求失败（HTTP ${status}）。${brief}`
 }
 
+/** 一次性（非流式）补全，用于生成判题适配模板这类后台任务 */
+export async function aiComplete(
+  settings: Settings,
+  system: string,
+  user: string,
+  opts: { maxTokens?: number; temperature?: number } = {}
+): Promise<{ ok: true; text: string } | { ok: false; message: string }> {
+  const key = (settings.aiApiKey || '').trim()
+  if (!key) return { ok: false, message: '未配置 API Key' }
+  try {
+    const res = await fetch(apiUrl(settings.aiBaseUrl || ''), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${key}` },
+      body: JSON.stringify({
+        model: settings.aiModel || 'deepseek-chat',
+        messages: [
+          { role: 'system', content: system },
+          { role: 'user', content: user }
+        ],
+        stream: false,
+        temperature: opts.temperature ?? 0.2,
+        max_tokens: opts.maxTokens ?? 4096
+      })
+    })
+    if (!res.ok) {
+      const body = await res.text().catch(() => '')
+      return { ok: false, message: describeHttpError(res.status, body) }
+    }
+    const json: any = await res.json().catch(() => null)
+    const text = json?.choices?.[0]?.message?.content
+    if (typeof text !== 'string' || !text.trim()) {
+      return { ok: false, message: '模型返回为空' }
+    }
+    return { ok: true, text }
+  } catch (e: any) {
+    return { ok: false, message: describeHttpError(0, String(e?.message || e)) }
+  }
+}
+
 /** 连通性自检：发一条极短请求 */
 export async function aiTest(settings: Settings): Promise<AiTestResult> {
   const key = (settings.aiApiKey || '').trim()

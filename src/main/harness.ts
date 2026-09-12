@@ -910,6 +910,12 @@ function cppBuildHelpers(problem: Problem): string {
   }
   // 相交链表适配器需要 vector<int> 解析助手
   if (isIntersectProblem(problem)) needs.add('_vint')
+  // AI 生成驱动时会用到这些助手，统一全部提供（未使用也不影响编译）
+  needs.add('_vint')
+  needs.add('_vdbl')
+  needs.add('_vbool')
+  needs.add('_vstr')
+  needs.add('_vvint')
 
   let helpers = ''
   if (needs.has('_vint')) helpers += `

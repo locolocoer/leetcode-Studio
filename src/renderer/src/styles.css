@@ -415,6 +415,12 @@ body {
 .kv:nth-child(odd) { background: rgba(255, 255, 255, 0.014); }
 .kv .k { color: var(--text-faint); overflow: hidden; text-overflow: ellipsis; }
 .kv .v { color: #9fd0ff; word-break: break-all; }
+/* AI 判题模板提示条 */
+.ai-harness-badge {
+  display: inline-block; font-size: 11.5px; padding: 3px 9px; margin-bottom: 10px;
+  border-radius: 999px; color: var(--text-dim);
+  background: rgba(91, 140, 255, 0.14); border: 1px solid rgba(91, 140, 255, 0.35);
+}
 /* 变量树 */
 .vrow { display: flex; align-items: baseline; gap: 6px; font-family: var(--mono); font-size: 12px; padding: 3px 8px; cursor: default; }
 .vrow:hover { background: rgba(255, 255, 255, 0.03); }

@@ -77,6 +77,12 @@ const api = {
     chat: (req: AiChatRequest): Promise<boolean> => invoke('ai:chat', req),
     abort: (): Promise<void> => invoke('ai:abort'),
     test: (): Promise<AiTestResult> => invoke('ai:test'),
+    clearHarness: (): Promise<boolean> => invoke('ai:clearHarness'),
+    onRunNote: (cb: (t: string) => void): (() => void) => {
+      const handler = (_e: Electron.IpcRendererEvent, t: string): void => cb(t)
+      ipcRenderer.on('run:note', handler)
+      return () => ipcRenderer.removeListener('run:note', handler)
+    },
     onDelta: (cb: (t: string) => void): (() => void) => {
       const handler = (_e: Electron.IpcRendererEvent, t: string): void => cb(t)
       ipcRenderer.on('ai:delta', handler)

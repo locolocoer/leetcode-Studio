@@ -4,7 +4,8 @@ import { join, dirname, delimiter } from 'path'
 import type {
   CaseResult, Language, Problem, RunResult, Settings, TestCase, ToolchainStatus
 } from '../shared/types'
-import { buildHarness } from './harness'
+import { buildHarness, type Harness } from './harness'
+import { generateHarness, getCachedHarness, assembleHarness } from './aiHarness'
 
 const RUNNER_TIMEOUT_MS_DEFAULT = 4000
 
@@ -144,36 +145,29 @@ export interface RunnerContext {
   toolchains: Record<Language, ToolchainStatus>
   settings: Settings
   runtimeDir: string
+  /** 运行过程中的提示（如「AI 正在生成判题模板」） */
+  onNote?: (msg: string) => void
 }
 
-export async function runAll(
+/**
+ * 用一份具体的判题模板编译并跑完所有用例。
+ * runAll 会先用确定性模板跑一遍，必要时再用 AI 生成的模板重跑。
+ */
+async function runWithHarness(
   problem: Problem,
   language: Language,
   sourceCode: string,
   tests: TestCase[],
   ctx: RunnerContext,
+  tc: ToolchainStatus,
+  harness: Harness,
   onTest?: (caseResult: CaseResult) => void
 ): Promise<RunResult> {
-  if (language === 'c' && problem.judgeType === 'class') {
-    return { ok: false, error: 'C 语言暂不支持 class 类型题目（构造函数/多方法）。仅支持函数型题目。', cases: [] }
-  }
-
-  const tc = ctx.toolchains[language]
-  if (!tc?.available) {
-    return {
-      ok: false,
-      error: `未找到 ${language} 编译器/解释器。请在「设置」中配置路径或安装工具链。${tc?.error ? ' ' + tc.error : ''}`,
-      cases: []
-    }
-  }
-
   const dir = join(ctx.runtimeDir, sanitize(problem.slug || problem.id || 'problem'), language)
   try {
     rmSync(dir, { recursive: true, force: true })
   } catch {}
   mkdirSync(dir, { recursive: true })
-
-  const harness = buildHarness(problem, language, sourceCode)
 
   for (const f of harness.files) {
     // ensure the class-name java file is written under its own name
@@ -269,6 +263,98 @@ export async function runAll(
     timedOut,
     totalTimeMs: undefined
   }
+}
+
+/** 这次失败像是「模板不对」而不是「你的代码不对」？ */
+function looksLikeHarnessProblem(r: RunResult): boolean {
+  if (r.compileFailed) return true
+  const cases = r.cases || []
+  if (!cases.length) return false
+  // 全部用例都没过、而且不同输入得到的实际输出完全一样 → 多半是驱动/序列化的问题
+  if (cases.every((c) => !c.passed)) {
+    const uniq = new Set(cases.map((c) => c.actual))
+    if (uniq.size === 1) return true
+  }
+  return false
+}
+
+export async function runAll(
+  problem: Problem,
+  language: Language,
+  sourceCode: string,
+  tests: TestCase[],
+  ctx: RunnerContext,
+  onTest?: (caseResult: CaseResult) => void
+): Promise<RunResult> {
+  if (language === 'c' && problem.judgeType === 'class') {
+    return { ok: false, error: 'C 语言暂不支持 class 类型题目（构造函数/多方法）。仅支持函数型题目。', cases: [] }
+  }
+
+  const tc = ctx.toolchains[language]
+  if (!tc?.available) {
+    return {
+      ok: false,
+      error: `未找到 ${language} 编译器/解释器。请在「设置」中配置路径或安装工具链。${tc?.error ? ' ' + tc.error : ''}`,
+      cases: []
+    }
+  }
+
+  const base = buildHarness(problem, language, sourceCode)
+  const aiEnabled = ctx.settings.autoHarness !== false && !!(ctx.settings.aiApiKey || '').trim()
+
+  // 1) 用过并验证通过的 AI 模板（缓存）优先
+  if (aiEnabled) {
+    const cached = getCachedHarness(problem, language)
+    if (cached) {
+      const h = assembleHarness(language, base, cached)
+      if (h) {
+        const r = await runWithHarness(problem, language, sourceCode, tests, ctx, tc, h, onTest)
+        if (r.ok) {
+          return { ...r, aiHarness: { used: true, note: '使用已完成验证的 AI 适配模板（本地缓存）' } }
+        }
+      }
+    }
+  }
+
+  // 2) 确定性模板
+  const first = await runWithHarness(problem, language, sourceCode, tests, ctx, tc, base, onTest)
+  if (!looksLikeHarnessProblem(first)) return first
+  if (!aiEnabled) {
+    return first
+  }
+
+  // 3) 看起来是模板的问题：让 AI 生成一份，并用本题用例验证（全过才采用）
+  ctx.onNote?.('检测到判题模板可能不适配本题，正在让 AI 生成模板…')
+  const gen = await generateHarness(
+    ctx.settings,
+    problem,
+    language,
+    sourceCode,
+    base,
+    async (h) => {
+      const v = await runWithHarness(problem, language, sourceCode, tests, ctx, tc, h)
+      if (v.compileFailed) return { ok: false, detail: '编译失败：\n' + String(v.compileOutput || '').slice(0, 1200) }
+      const failed = (v.cases || []).filter((c) => !c.passed)
+      if (failed.length) {
+        return {
+          ok: false,
+          detail: failed
+            .slice(0, 2)
+            .map((c) => `用例输入 ${c.input.join(' | ')}：期望 ${c.expected}，实际 ${c.actual}${c.error ? '，' + c.error : ''}`)
+            .join('\n')
+        }
+      }
+      return { ok: true, detail: '' }
+    },
+    (m) => ctx.onNote?.(m)
+  )
+  if (!gen) {
+    ctx.onNote?.('AI 模板生成未成功，仍按原模板结果展示。')
+    return { ...first, aiHarness: { used: false, note: 'AI 模板生成未通过验证' } }
+  }
+  ctx.onNote?.('AI 模板验证通过，正在用它重新运行…')
+  const second = await runWithHarness(problem, language, sourceCode, tests, ctx, tc, gen.harness, onTest)
+  return { ...second, aiHarness: { used: true, note: 'AI 生成并通过本题用例验证（已缓存）' } }
 }
 
 export function sanitize(s: string): string {

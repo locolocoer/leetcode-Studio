@@ -60,6 +60,8 @@ interface DshApiShape {
     chat(req: AiChatRequest): Promise<boolean>
     abort(): Promise<void>
     test(): Promise<AiTestResult>
+    clearHarness(): Promise<boolean>
+    onRunNote(cb: (t: string) => void): () => void
     onDelta(cb: (t: string) => void): () => void
     onDone(cb: (full: string) => void): () => void
     onError(cb: (m: string) => void): () => void
