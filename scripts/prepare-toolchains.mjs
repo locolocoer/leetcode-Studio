@@ -147,7 +147,8 @@ async function prepareJdk() {
     '--strip-debug',
     '--no-header-files',
     '--no-man-pages',
-    '--compress=zip-6'
+    // JDK 17 的 jlink 只接受 0/1/2（zip-N 是 JDK 21+ 的写法）
+    '--compress=2'
   ])
   for (const exe of ['java.exe', 'javac.exe', 'jdb.exe']) {
     if (!existsSync(join(target, 'bin', exe))) throw new Error(`jlink 结果缺少 bin/${exe}`)
