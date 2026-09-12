@@ -474,88 +474,6 @@ export class DebugSession {
   }
 
   // ---------------- C / C++ native (gdb) ----------------
-  // gdb 里执行 lc_show(x) 得到一行 IDE 风格的文本（返回 char*，gdb 直接可读）
-  private static CPP_DEBUG_HELPER = `#pragma once
-#include <string>
-#include <vector>
-#include <map>
-#include <set>
-#include <unordered_map>
-#include <unordered_set>
-#include <sstream>
-
-static std::string& lc__buf() { static std::string b; return b; }
-
-static std::string lc__s(int v);
-static std::string lc__s(long long v);
-static std::string lc__s(unsigned long long v);
-static std::string lc__s(double v);
-static std::string lc__s(char v);
-static std::string lc__s(bool v);
-static std::string lc__s(const char* v);
-static std::string lc__s(const std::string& v);
-static std::string lc__s(const std::vector<int>& v);
-static std::string lc__s(const std::vector<char>& v);
-static std::string lc__s(const std::vector<std::string>& v);
-
-template <class T>
-static std::string lc__vec(const std::vector<T>& v) {
-  std::string r = "[";
-  for (size_t i = 0; i < v.size(); i++) { if (i) r += ", "; r += lc__s(v[i]); }
-  return r + "]";
-}
-
-template <class M>
-static std::string lc__map(const M& m) {
-  std::string r = "{";
-  bool f = true;
-  for (const auto& kv : m) { if (!f) r += ", "; f = false; r += lc__s(kv.first) + ": " + lc__s(kv.second); }
-  return r + "}";
-}
-
-template <class S>
-static std::string lc__set(const S& s) {
-  std::string r = "{";
-  bool f = true;
-  for (const auto& x : s) { if (!f) r += ", "; f = false; r += lc__s(x); }
-  return r + "}";
-}
-
-static std::string lc__s(int v) { std::ostringstream o; o << v; return o.str(); }
-static std::string lc__s(long long v) { std::ostringstream o; o << v; return o.str(); }
-static std::string lc__s(unsigned long long v) { std::ostringstream o; o << v; return o.str(); }
-static std::string lc__s(double v) { std::ostringstream o; o << v; return o.str(); }
-static std::string lc__s(char v) { std::string r = "'"; r += v; return r + "'"; }
-static std::string lc__s(bool v) { return v ? "true" : "false"; }
-static std::string lc__s(const char* v) { return std::string("\\"") + (v ? v : "") + "\\""; }
-static std::string lc__s(const std::string& v) { return "\\"" + v + "\\""; }
-static std::string lc__s(const std::vector<int>& v) { return lc__vec(v); }
-static std::string lc__s(const std::vector<char>& v) { return lc__vec(v); }
-static std::string lc__s(const std::vector<std::string>& v) { return lc__vec(v); }
-
-static const char* lc__ret(const std::string& s) { lc__buf() = s; return lc__buf().c_str(); }
-
-const char* lc_show(int v) { return lc__ret(lc__s(v)); }
-const char* lc_show(long long v) { return lc__ret(lc__s(v)); }
-const char* lc_show(double v) { return lc__ret(lc__s(v)); }
-const char* lc_show(char v) { return lc__ret(lc__s(v)); }
-const char* lc_show(bool v) { return lc__ret(lc__s(v)); }
-const char* lc_show(const std::string& v) { return lc__ret(lc__s(v)); }
-const char* lc_show(const std::vector<int>& v) { return lc__ret(lc__vec(v)); }
-const char* lc_show(const std::vector<long long>& v) { return lc__ret(lc__vec(v)); }
-const char* lc_show(const std::vector<double>& v) { return lc__ret(lc__vec(v)); }
-const char* lc_show(const std::vector<char>& v) { return lc__ret(lc__vec(v)); }
-const char* lc_show(const std::vector<bool>& v) { return lc__ret(lc__vec(v)); }
-const char* lc_show(const std::vector<std::string>& v) { return lc__ret(lc__vec(v)); }
-const char* lc_show(const std::vector<std::vector<int> >& v) { return lc__ret(lc__vec(v)); }
-const char* lc_show(const std::vector<std::vector<char> >& v) { return lc__ret(lc__vec(v)); }
-const char* lc_show(const std::vector<std::vector<std::string> >& v) { return lc__ret(lc__vec(v)); }
-const char* lc_show(const std::map<int, int>& m) { return lc__ret(lc__map(m)); }
-const char* lc_show(const std::unordered_map<int, int>& m) { return lc__ret(lc__map(m)); }
-const char* lc_show(const std::map<std::string, int>& m) { return lc__ret(lc__map(m)); }
-const char* lc_show(const std::set<int>& s) { return lc__ret(lc__set(s)); }
-const char* lc_show(const std::unordered_set<int>& s) { return lc__ret(lc__set(s)); }
-`
 
   private async startNativeGcc(
     problem: Problem,
@@ -575,16 +493,9 @@ const char* lc_show(const std::unordered_set<int>& s) { return lc__ret(lc__set(s
     const harness = buildHarness(problem, language, sourceCode)
     for (const f of harness.files) writeFileSync(join(dir, f.name), f.content, 'utf8')
     writeFileSync(join(dir, 'input.txt'), test.input.join('\n') + '\n', 'utf8')
-    // 内置 gdb 没有 Python，无法用 STL pretty-printer；改由调试辅助函数把
-    // vector/map/set/string 渲染成 IDE 风格文本，gdb 通过 call lc_show(x) 取值
-    if (language === 'cpp') {
-      writeFileSync(join(dir, 'lc_dbg.hpp'), DebugSession.CPP_DEBUG_HELPER, 'utf8')
-      const mainPath = join(dir, 'main.cpp')
-      try {
-        const src = readFileSync(mainPath, 'utf8')
-        if (!src.includes('lc_dbg.hpp')) writeFileSync(mainPath, '#include "lc_dbg.hpp"\n' + src, 'utf8')
-      } catch {}
-    }
+    // 注意：不再向用户代码注入任何调试辅助头文件。
+    // 容器显示改用「只读内存」的方式（见 nativeDebug.ts 的 readStl），
+    // 绝不在被调试程序里调用函数——那种方式一旦卡住会让 gdb 永久无响应。
 
     const compiler = toolchain.compilerPath || (language === 'cpp' ? 'g++' : 'gcc')
     const env: NodeJS.ProcessEnv = { ...process.env }

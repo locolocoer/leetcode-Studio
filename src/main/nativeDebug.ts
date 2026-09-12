@@ -102,7 +102,18 @@ export function startGdbRunner(o: NativeOpts): NativeRunner {  let child: ChildP
   async function sendWait(cmd: string, re: RegExp, ms = 9000): Promise<RegExpExecArray | null> {
     const p = waitFor(re, ms)
     send(cmd)
-    return p
+    const m = await p
+    if (!m) markDead('gdb 没有响应（命令超时）。调试会话已结束，请重新开始调试。')
+    return m
+  }
+
+  // 一旦出现「发出去的命令没有响应」，gdb 与本地的命令队列就失配了：
+  // 继续发送只会越来越乱，所以直接结束会话并提示用户重开，绝不假装还在工作。
+  function markDead(msg: string): void {
+    if (done) return
+    done = true
+    emit({ kind: 'error', line: 0, message: msg })
+    killTree(child)
   }
 
   child = spawn('gdb', ['-q', '-i=mi3', o.exe], {
@@ -132,7 +143,12 @@ export function startGdbRunner(o: NativeOpts): NativeRunner {  let child: ChildP
     const p = waitFor(/^\^done,value="(?:[^"\\]|\\.)*"|^\^error/, ms)
     send('-data-evaluate-expression "' + expr.replace(/"/g, '\\"') + '"\n')
     const m = await p
-    if (!m || !m[0].startsWith('^done')) return ''
+    if (!m) {
+      // 读内存也应该秒回；没响应说明 gdb 已经不正常了
+      markDead('gdb 没有响应（读取变量超时）。调试会话已结束，请重新开始调试。')
+      return ''
+    }
+    if (!m[0].startsWith('^done')) return ''
     const vm = /^value="((?:[^"\\]|\\.)*)"/.exec(m[0].slice(m[0].indexOf(',') + 1))
     if (!vm) return ''
     return vm[1].replace(/\\"/g, '"').replace(/\\n/g, ' ').replace(/\s+/g, ' ').trim()
@@ -140,10 +156,14 @@ export function startGdbRunner(o: NativeOpts): NativeRunner {  let child: ChildP
 
   // MI 变量对象：拿到变量的类型名和是否有子成员（用来判断是不是结构体）
   async function varCreate(expr: string): Promise<{ vn: string; type: string; numchild: number } | null> {
-    const p = waitFor(/^\^done,name="[^"]*".*|^\^error/)
+    const p = waitFor(/^\^done,name="[^"]*".*|^\^error/, 9000)
     send('-var-create - * ' + expr + '\n')
     const m = await p
-    if (!m || !m[0].startsWith('^done')) return null
+    if (!m) {
+      markDead('gdb 没有响应（创建变量对象超时）。调试会话已结束，请重新开始调试。')
+      return null
+    }
+    if (!m[0].startsWith('^done')) return null
     const line = m[0]
     return {
       vn: /name="((?:[^"\\]|\\.)*)"/.exec(line)?.[1] || '',
@@ -264,17 +284,137 @@ export function startGdbRunner(o: NativeOpts): NativeRunner {  let child: ChildP
       const rendered = await structExpand(name, new Set([addr.toLowerCase()]))
       if (rendered) locals[name] = capVal(rendered, 300)
     }
-    // STL 容器/字符串：内置 gdb 没有 pretty-printer，用 lc_show() 渲染成 [..] / {..}
+    // STL 容器/字符串：只用「读内存」的方式渲染（绝不调用被调试程序的函数）
     const stl = Object.entries(locals)
       .filter(([, v]) => /std::|{<|_M_|\.\.\.}/.test(v))
       .slice(0, 8)
     for (const [name] of stl) {
       if (!/^[A-Za-z_$][\w$]*$/.test(name)) continue
-      const s = await evalExpr('lc_show(' + name + ')', 2500)
-      const q = /"(.*)"\s*$/.exec(s)
-      if (q) locals[name] = capVal(q[1], 300)
+      const rendered = await readStl(name)
+      if (rendered) locals[name] = capVal(rendered, 300)
     }
     return locals
+  }
+
+  // -------------------------------------------------------------------------
+  // STL 容器显示：全部基于 gdb 读内存（-data-evaluate-expression 里的取址/解引用），
+  // 不调用被调试程序里的任何函数。
+  //
+  // 之前用 lc_show(x) 这种「在被调试程序里执行函数」的方式渲染容器，
+  // 一旦这次 inferior call 卡住（C++ 静态初始化/锁/分配都可能），
+  // gdb 就永远停在调用里 —— 之后再发单步/步过都没有响应，表现为「点步过卡死」。
+  // -------------------------------------------------------------------------
+
+  /** 从 std::vector<T, A> 的类型名里取出 T（处理嵌套模板） */
+  function firstTemplateArg(type: string): string | null {
+    const i = type.indexOf('<')
+    if (i < 0) return null
+    let depth = 0
+    for (let k = i; k < type.length; k++) {
+      const c = type[k]
+      if (c === '<') depth++
+      else if (c === '>') {
+        depth--
+        if (depth === 0) {
+          const inner = type.slice(i + 1, k)
+          // 取顶层第一个逗号之前的类型
+          let d2 = 0
+          for (let j = 0; j < inner.length; j++) {
+            const cj = inner[j]
+            if (cj === '<') d2++
+            else if (cj === '>') d2--
+            else if (cj === ',' && d2 === 0) return inner.slice(0, j).trim()
+          }
+          return inner.trim()
+        }
+      }
+    }
+    return null
+  }
+
+  const isVectorType = (t: string) => /^std::vector<\s*/.test(t) || /^std::__cxx11::vector</.test(t)
+  const isStringType = (t: string) => /basic_string<|^std::string$/.test(t)
+  const isAssocType = (t: string) =>
+    /^std::(unordered_)?(map|set)</.test(t) || /^std::(unordered_)?multimap</.test(t) || /^std::(unordered_)?multiset</.test(t)
+
+  function fmtSeq(items: string[], more: boolean): string {
+    return '[' + items.join(', ') + (more ? ', …' : '') + ']'
+  }
+
+  /** 读 vector 的 size：finish - start */
+  async function vecCount(expr: string): Promise<number> {
+    const s = await evalExpr(`(${expr})._M_impl._M_finish - (${expr})._M_impl._M_start`, 4000)
+    const n = parseInt(s.replace(/[^0-9-]/g, ''), 10)
+    return Number.isFinite(n) && n >= 0 ? n : -1
+  }
+
+  /** 读 vector<T>（T 为标量）的元素：start[0]@n，gdb 直接打印成 {a, b, c} */
+  async function vecScalarItems(expr: string, n: number): Promise<string[]> {
+    const s = await evalExpr(`(${expr})._M_impl._M_start[0]@${n}`, 5000)
+    const m = /^\{(.*)\}$/s.exec(s.trim())
+    if (!m) return []
+    return m[1].split(',').map((x) => x.trim()).filter((x) => x !== '')
+  }
+
+  async function readStl(name: string): Promise<string | null> {
+    const info = await varCreate(name)
+    if (!info) return null
+    try {
+      const type = info.type
+      if (isStringType(type) && !/vector/.test(type)) {
+        // std::string：读 _M_dataplus._M_p，gdb 会打印成 0x... "abc"
+        const s = await evalExpr(`(${name})._M_dataplus._M_p`, 4000)
+        const q = /"(.*)"\s*$/.exec(s)
+        return q ? '"' + q[1] + '"' : null
+      }
+      if (isVectorType(type)) {
+        // vector<bool> 是位压缩的特殊实现，跳过（不冒险）
+        const elem = firstTemplateArg(type) || ''
+        if (/\bbool\b/.test(elem)) return null
+        const n = await vecCount(name)
+        if (n < 0) return null
+        if (n === 0) return '[]'
+        const show = Math.min(n, 24)
+        if (isVectorType(elem)) {
+          // vector<vector<T>>：逐个读内层
+          const out: string[] = []
+          for (let i = 0; i < show; i++) {
+            const inner = `(${name})._M_impl._M_start[${i}]`
+            const k = await vecCount(inner)
+            if (k <= 0) { out.push('[]'); continue }
+            out.push(fmtSeq(await vecScalarItems(inner, Math.min(k, 24)), k > 24))
+          }
+          return fmtSeq(out, n > show)
+        }
+        if (isStringType(elem)) {
+          const out: string[] = []
+          for (let i = 0; i < show; i++) {
+            const s = await evalExpr(`(${name})._M_impl._M_start[${i}]._M_dataplus._M_p`, 4000)
+            const q = /"(.*)"\s*$/.exec(s)
+            out.push(q ? '"' + q[1] + '"' : '""')
+          }
+          return fmtSeq(out, n > show)
+        }
+        const items = await vecScalarItems(name, show)
+        if (!items.length) return null
+        return fmtSeq(items, n > show)
+      }
+      if (isAssocType(type)) {
+        // map/set 的结点结构不适合用表达式遍历（会退化成函数调用或极深的字段访问），
+        // 这里只报元素个数，保证绝不卡住调试器。
+        const cntField = /unordered/.test(type)
+          ? `(${name})._M_h._M_element_count`
+          : `(${name})._M_t._M_impl._M_node_count`
+        const s = await evalExpr(cntField, 4000)
+        const n = parseInt(s.replace(/[^0-9-]/g, ''), 10)
+        if (!Number.isFinite(n) || n < 0) return null
+        const label = /unordered_map|^std::map/.test(type) ? 'map' : 'set'
+        return n === 0 ? '{}' : `{${label}: ${n} 项}`
+      }
+      return null
+    } finally {
+      await varDelete(info.vn)
+    }
   }
 
   async function stopInUser(st: { reason: string; line: number | null; func: string }, kindDefault: 'breakpoint' | 'line') {
@@ -296,7 +436,7 @@ export function startGdbRunner(o: NativeOpts): NativeRunner {  let child: ChildP
       const p = waitFor(STOP, 15000)
       send('-exec-continue\n')
       const m = await p
-      if (!m) { emit({ kind: 'error', line: 0, message: 'gdb 无响应（继续执行超时）。' }); return }
+      if (!m) { markDead('gdb 没有响应（继续执行超时）。调试会话已结束，请重新开始调试。'); return }
       count++
       const st = parseStopped(m[0])
       if (st.reason === 'exited-normally' || st.reason === 'exited') {
@@ -308,7 +448,7 @@ export function startGdbRunner(o: NativeOpts): NativeRunner {  let child: ChildP
         return
       }
     }
-    emit({ kind: 'error', line: 0, message: 'gdb: 始终没有回到你的代码，已停止。' })
+    markDead('gdb 始终没有回到你的代码。调试会话已结束，请重新开始调试。')
   }
 
   function bootstrap() {
@@ -327,7 +467,7 @@ export function startGdbRunner(o: NativeOpts): NativeRunner {  let child: ChildP
       const p = waitFor(STOP)
       send('-interpreter-exec console "run < input.txt"\n')
       const m = await p
-      if (!m) { emit({ kind: 'error', line: 0, message: 'gdb run failed' }); return }
+      if (!m) { markDead('gdb 启动程序失败（没有收到停止事件）。'); return }
       const st = parseStopped(m[0])
       if (st.reason === 'exited-normally' || st.reason === 'exited') {
         emit({ kind: 'finished', line: 0 })
@@ -350,7 +490,7 @@ export function startGdbRunner(o: NativeOpts): NativeRunner {  let child: ChildP
       send(cmd + '\n')
       const m = await p
       if (!m) {
-        emit({ kind: 'error', line: 0, message: `gdb 无响应，${label}已中断。可点「停止」后重试。` })
+        markDead(`gdb 没有响应（${label}超时）。调试会话已结束，请重新开始调试。`)
         return
       }
       count++
@@ -366,15 +506,17 @@ export function startGdbRunner(o: NativeOpts): NativeRunner {  let child: ChildP
     }
     emit({
       kind: 'error', line: 0,
-      message: `${label}超时：这一行可能进入了很深的库代码（如 STL 内部）。可以改用「继续」跑到断点，或把断点放在更外层。`
+      message: `${label}时间过长：这一行可能进入了很深的库代码（如 STL 内部）。可以改用「继续」跑到断点，或把断点放到更外层。`
     })
   }
 
   function stepInto(): void {
+    if (done) return
     queue = queue.then(() => advance('-exec-step', '步进'))
   }
 
   function nextOver(): void {
+    if (done) return
     queue = queue.then(() => advance('-exec-next', '步过'))
   }
 
@@ -384,9 +526,11 @@ export function startGdbRunner(o: NativeOpts): NativeRunner {  let child: ChildP
     step: stepInto,
     over: nextOver,
     resume: () => {
+      if (done) return
       queue = queue.then(() => waitUserStop())
     },
     addBreakpoint: (line) => {
+      if (done) return
       queue = queue.then(async () => {
         await sendWait('-break-insert -f ' + userFile(o.lang) + ':' + line + '\n', /^\^done,bkpt=.*/)
       })
