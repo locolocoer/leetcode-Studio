@@ -124,12 +124,14 @@ jobs:
       # 可选：把产物同步到阿里云 OSS，作为国内自动更新源。
       # 在仓库 Settings → Secrets 配置 OSS_ACCESS_KEY_ID / OSS_ACCESS_KEY_SECRET 后自动启用；
       # 未配置时跳过，客户端会回退到 GitHub Release。
+      # 上传失败不阻塞发版（GitHub Release 已创建，客户端会回退），但会打 error 注解。
       - name: Upload to Aliyun OSS
         if: env.OSS_ACCESS_KEY_ID != ''
+        continue-on-error: true
         env:
           OSS_ACCESS_KEY_ID: ${{ secrets.OSS_ACCESS_KEY_ID }}
           OSS_ACCESS_KEY_SECRET: ${{ secrets.OSS_ACCESS_KEY_SECRET }}
-          OSS_BUCKET: ${{ vars.OSS_BUCKET || 'leetcode' }}
+          OSS_BUCKET: ${{ vars.OSS_BUCKET || 'leetcode-studio' }}
           OSS_ENDPOINT: ${{ vars.OSS_ENDPOINT || 'oss-cn-beijing.aliyuncs.com' }}
         run: |
           set -e
@@ -151,23 +153,27 @@ jobs:
             sed -i -E "s#(url|path): #\1: v${VERSION}/#" "$yml"
           done
           # --acl public-read：客户端用匿名 GET 下载更新，对象必须可公开读取
-          ./ossutil cp -rf artifacts/ "oss://${OSS_BUCKET}/" --acl public-read
-
-      # 更新源必须匿名可读，否则客户端下载 403；这里直接探活，尽早暴露权限问题
-      - name: Verify OSS feed is publicly readable
-        if: env.OSS_ACCESS_KEY_ID != ''
-        env:
-          OSS_ACCESS_KEY_ID: ${{ secrets.OSS_ACCESS_KEY_ID }}
-          OSS_BUCKET: ${{ vars.OSS_BUCKET || 'leetcode' }}
-          OSS_ENDPOINT: ${{ vars.OSS_ENDPOINT || 'oss-cn-beijing.aliyuncs.com' }}
-        run: |
-          set -e
-          URL="https://${OSS_BUCKET}.${OSS_ENDPOINT}/latest.yml"
-          echo "check $URL"
-          CODE=$(curl -s -o /tmp/latest.yml -w '%{http_code}' "$URL")
-          echo "HTTP $CODE"
-          cat /tmp/latest.yml
-          if [ "$CODE" != "200" ]; then
-            echo "::error::OSS 更新源不可匿名读取（HTTP $CODE）。请把桶/对象设为公共读，或关闭「阻止公共访问」。"
+          if ! ./ossutil cp -rf artifacts/ "oss://${OSS_BUCKET}/" --acl public-read; then
+            echo "::error::OSS 上传失败：请确认 AccessKey 对桶 ${OSS_BUCKET} 有写权限，且桶未开启「阻止公共访问」（对象需公共读才能被客户端下载）。"
             exit 1
           fi
+
+      # 更新源必须匿名可读，否则客户端下载 403；无论上传是否成功都探活，尽早暴露权限问题
+      - name: Verify OSS feed is publicly readable
+        if: always() && env.OSS_ACCESS_KEY_ID != ''
+        env:
+          OSS_ACCESS_KEY_ID: ${{ secrets.OSS_ACCESS_KEY_ID }}
+          OSS_BUCKET: ${{ vars.OSS_BUCKET || 'leetcode-studio' }}
+          OSS_ENDPOINT: ${{ vars.OSS_ENDPOINT || 'oss-cn-beijing.aliyuncs.com' }}
+        run: |
+          URL="https://${OSS_BUCKET}.${OSS_ENDPOINT}/latest.yml"
+          echo "check $URL"
+          CODE=$(curl -s -o /tmp/latest.yml -w '%{http_code}' "$URL" || echo 000)
+          echo "HTTP $CODE"
+          cat /tmp/latest.yml || true
+          if [ "$CODE" = "200" ]; then
+            echo "✓ OSS 更新源可用"
+            exit 0
+          fi
+          echo "::error::OSS 更新源不可匿名读取（HTTP $CODE，$URL）。常见原因：桶/对象不是公共读，或桶开启了「阻止公共访问」。客户端会自动回退到 GitHub Release。"
+          exit 1

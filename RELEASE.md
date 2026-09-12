@@ -1,19 +1,19 @@
-# LeetCode Studio 1.0.2 发布说明
+# LeetCode Studio 1.0.3 发布说明
 
 本地 LeetCode 刷题桌面应用：多语言编译运行、逐步调试、查看题解、账号登录与一键提交。
 所有编译器与运行时已内置于安装包，**无需另外安装 Python / JDK / GCC**。
 
-- 版本：1.0.2
+- 版本：1.0.3
 - 平台：Windows 10 / 11（x64）
 - 仓库：<https://github.com/locolocoer/leetcode-Studio>
 - 下载：<https://github.com/locolocoer/leetcode-Studio/releases>
 
-## 本版更新（1.0.2）
+## 本版更新（1.0.3）
 
-- 修正国内更新源地址为 `https://leetcode.oss-cn-beijing.aliyuncs.com/`（此前指向未创建的桶，导致启动时先 404 再回退 GitHub）。
-- 发布流程补充：OSS 上传使用 `--acl public-read`，并新增「更新源可匿名读取」探活步骤，权限问题会在 CI 直接报错而不是等客户端下载失败。
+- 国内更新源确定为 **`https://leetcode-studio.oss-cn-beijing.aliyuncs.com/`**（`leetcode-studio` 桶）。
+- 发版流程：OSS 上传带 `--acl public-read`（并保留失败不阻塞发版），新增「更新源可匿名读取」探活步骤，权限问题会在 CI 直接报错并给出原因提示。
 
-### 1.0.1
+### 1.0.1 / 1.0.2
 
 - 自动更新全过程写入 `%APPDATA%\leetcode-studio\.runtime\updater.log`，方便排查「检查不到更新」。
 - 设置页「关于与更新」读取全局状态：切到设置页也能看到最近一次检查结果，下载中显示进度条。
@@ -23,8 +23,8 @@
 
 | 文件 | 大小 | 说明 |
 | --- | --- | --- |
-| `LeetCode-Studio-1.0.2-setup.exe` | ≈172 MB | 安装版（推荐）：可自选目录、创建快捷方式、支持自动更新 |
-| `LeetCode-Studio-1.0.2-portable.exe` | ≈172 MB | 免安装便携版：双击即用（首次启动需解压内置工具链到临时目录，约 1 分钟） |
+| `LeetCode-Studio-1.0.3-setup.exe` | ≈172 MB | 安装版（推荐）：可自选目录、创建快捷方式、支持自动更新 |
+| `LeetCode-Studio-1.0.3-portable.exe` | ≈172 MB | 免安装便携版：双击即用（首次启动需解压内置工具链到临时目录，约 1 分钟） |
 | `latest.yml` | — | 自动更新元数据（electron-builder 生成，随 Release 发布，含安装包 sha512） |
 
 > 文件名不带空格，确保自动更新的 `latest.yml` 与实际文件名一致。
