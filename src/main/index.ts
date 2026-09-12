@@ -308,6 +308,10 @@ function registerIpc() {
 
 function createWindow() {
   const isMac = process.platform === 'darwin'
+  // Windows 任务栏图标/通知分组用 AppUserModelId，需与 electron-builder 的 appId 一致
+  if (process.platform === 'win32') app.setAppUserModelId('com.leetcodestudio.app')
+  // 开发模式没有 exe 图标，显式给窗口一个图标（打包版用 exe 内嵌图标）
+  const devIcon = !app.isPackaged ? join(app.getAppPath(), 'build', 'icon.png') : undefined
   mainWindow = new BrowserWindow({
     width: 1440,
     height: 900,
@@ -315,6 +319,7 @@ function createWindow() {
     minHeight: 720,
     title: 'LeetCode Studio',
     backgroundColor: '#0d1015',
+    ...(devIcon && existsSync(devIcon) ? { icon: devIcon } : {}),
     // Windows/Linux 去掉原生标题栏，改用顶栏里的自绘最小化/最大化/关闭
     ...(isMac ? { titleBarStyle: 'hiddenInset' as const } : { frame: false }),
     autoHideMenuBar: true,

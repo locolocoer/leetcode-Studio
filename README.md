@@ -80,14 +80,20 @@ src/
     toolchain.ts   工具链自动检测/配置
     runner.ts      编译 + 运行 + 用例对比
     harness.ts     生成各语言包装代码（核心）
-    fetcher.ts     LeetCode 在线拉题
-    debugger.ts    Python 逐步调试（settrace）
+    fetcher.ts     LeetCode 在线拉题 / 题解
+    ai.ts          AI 做题助手（分级提示词 + 流式接口）
+    debugger.ts    逐步调试（Python settrace / gdb / jdb）
     store.ts       本地题目/设置持久化
     types.ts       题目签名类型模型
   preload/         contextBridge API
-  renderer/        React UI（侧边栏/题面/Monaco/运行/调试/设置/拉题）
+  renderer/        React UI（侧边栏/题面/Monaco/运行/调试/AI/设置/拉题）
   shared/types.ts  主进程与渲染进程共享类型
+build/             应用图标（icon.png 源图 / icon.ico 多尺寸）
+scripts/           工具链准备、版本号同步、图标生成
 ```
+
+> 应用图标：改 `scripts/make-icon.ps1` 后执行 `powershell -File scripts/make-icon.ps1` 重新生成
+> `build/icon.png` 与 `build/icon.ico`（该脚本含中文注释，必须保持 UTF-8 with BOM）。
 
 ## ⚠️ 当前边界
 

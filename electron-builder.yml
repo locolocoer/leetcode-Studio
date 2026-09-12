@@ -14,6 +14,7 @@ extraResources:
       - "**/*"
 asar: true
 win:
+  icon: build/icon.ico
   target:
     - nsis
     - portable
@@ -25,16 +26,21 @@ nsis:
   allowToChangeInstallationDirectory: true
   createDesktopShortcut: true
   shortcutName: LeetCode Studio
+  installerIcon: build/icon.ico
+  uninstallerIcon: build/icon.ico
+  installerHeaderIcon: build/icon.ico
   # 自动更新：生成差分包 + 卸载时保留用户数据
   differentialPackage: true
   deleteAppDataOnUninstall: false
 portable:
   artifactName: LeetCode-Studio-${version}-portable.${ext}
 mac:
+  icon: build/icon.png
   target:
     - dmg
   category: public.app-category.developer-tools
 linux:
+  icon: build/icon.png
   target:
     - AppImage
   category: Development
