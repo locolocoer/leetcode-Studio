@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import type { Language, Settings, ToolchainStatus, UpdateStatus } from '../../../shared/types'
 import UpdateCard from './UpdateCard'
+import AiSettingsCard from './AiSettingsCard'
 
 interface Props {
   settings: Settings
@@ -112,6 +113,9 @@ export default function SettingsPanel({ settings, toolchains, updateStatus, onSa
       </div>
 
       <button className="btn primary" onClick={save}>{saved ? '✓ 已保存' : '保存设置'}</button>
+
+      <div style={{ height: 14 }} />
+      <AiSettingsCard settings={settings} onSave={onSave} />
 
       <div style={{ height: 14 }} />
       <UpdateCard status={updateStatus} />

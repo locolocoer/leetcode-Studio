@@ -3,7 +3,7 @@ import { join } from 'path'
 import { writeFileSync, readFileSync, existsSync, appendFileSync } from 'fs'
 import { autoUpdater } from 'electron-updater'
 import type {
-  AppInfo, CatalogEntry, Language, Problem, RunResult, Settings, SolutionOrderBy, TestCase, UpdateStatus
+  AiChatRequest, AppInfo, CatalogEntry, Language, Problem, RunResult, Settings, SolutionOrderBy, TestCase, UpdateStatus
 } from '../shared/types'
 import { detectAll, detectToolchain } from './toolchain'
 import { runAll, normalizeManualExpected, type RunnerContext } from './runner'
@@ -14,6 +14,7 @@ import {
 import { Store } from './store'
 import { DebugSession } from './debugger'
 import { LeetCodeClient, baseOf } from './leetcode'
+import { aiChat, aiTest } from './ai'
 
 declare const __COMMIT__: string
 
@@ -236,6 +237,27 @@ function registerIpc() {
   ipcMain.handle('clipboard:text', () => a.clipboardText())
   ipcMain.handle('open:external', (_e, url: string) => a.openExternal(url))
   ipcMain.handle('runtime:dir', () => runtimeDir)
+
+  // --- AI 做题助手（主进程持有 Key 并组装「不给答案」的提示词）---
+  let aiAbort: (() => void) | null = null
+  ipcMain.handle('ai:chat', (_e, req: AiChatRequest) => {
+    aiAbort?.()
+    const settings = store.loadSettings()
+    aiAbort = aiChat(settings, req, {
+      onDelta: (t) => mainWindow?.webContents.send('ai:delta', t),
+      onDone: (full) => {
+        aiAbort = null
+        mainWindow?.webContents.send('ai:done', full)
+      },
+      onError: (message) => {
+        aiAbort = null
+        mainWindow?.webContents.send('ai:error', message)
+      }
+    })
+    return true
+  })
+  ipcMain.handle('ai:abort', () => { aiAbort?.(); aiAbort = null })
+  ipcMain.handle('ai:test', () => aiTest(store.loadSettings()))
 
   // --- 无边框窗口的自绘标题栏按钮 ---
   ipcMain.handle('win:minimize', () => { mainWindow?.minimize() })

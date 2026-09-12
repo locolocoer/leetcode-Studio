@@ -1,8 +1,9 @@
 /// <reference types="vite/client" />
 
 import type {
-  AppInfo, AuthStatus, CatalogEntry, DebugSnapshot, FetchedProblemListEntry, Language, Problem, RunResult,
-  Settings, SolutionDetail, SolutionListResult, SolutionOrderBy, SubmitVerdict, ToolchainStatus, UpdateStatus
+  AiChatRequest, AiTestResult, AppInfo, AuthStatus, CatalogEntry, DebugSnapshot, FetchedProblemListEntry,
+  Language, Problem, RunResult, Settings, SolutionDetail, SolutionListResult, SolutionOrderBy, SubmitVerdict,
+  ToolchainStatus, UpdateStatus
 } from '../../shared/types'
 
 interface DshApiShape {
@@ -52,6 +53,14 @@ interface DshApiShape {
     check(): Promise<boolean>
     install(): Promise<boolean>
     onStatus(cb: (s: UpdateStatus) => void): () => void
+  }
+  ai: {
+    chat(req: AiChatRequest): Promise<boolean>
+    abort(): Promise<void>
+    test(): Promise<AiTestResult>
+    onDelta(cb: (t: string) => void): () => void
+    onDone(cb: (full: string) => void): () => void
+    onError(cb: (m: string) => void): () => void
   }
   win: {
     minimize(): Promise<void>

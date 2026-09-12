@@ -1,8 +1,8 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import type {
-  AppInfo, AuthStatus, CatalogEntry, DebugSnapshot, FetchedProblemListEntry, Language, Problem, RunResult,
-  Settings, SolutionDetail, SolutionListResult, SolutionOrderBy, SubmitVerdict, TestCase, ToolchainStatus,
-  UpdateStatus
+  AiChatRequest, AiTestResult, AppInfo, AuthStatus, CatalogEntry, DebugSnapshot, FetchedProblemListEntry,
+  Language, Problem, RunResult, Settings, SolutionDetail, SolutionListResult, SolutionOrderBy, SubmitVerdict,
+  TestCase, ToolchainStatus, UpdateStatus
 } from '../shared/types'
 
 const invoke = (channel: string, ...args: any[]) => ipcRenderer.invoke(channel, ...args)
@@ -70,6 +70,26 @@ const api = {
       const handler = (_e: Electron.IpcRendererEvent, s: UpdateStatus): void => cb(s)
       ipcRenderer.on('update:status', handler)
       return () => ipcRenderer.removeListener('update:status', handler)
+    }
+  },
+  ai: {
+    chat: (req: AiChatRequest): Promise<boolean> => invoke('ai:chat', req),
+    abort: (): Promise<void> => invoke('ai:abort'),
+    test: (): Promise<AiTestResult> => invoke('ai:test'),
+    onDelta: (cb: (t: string) => void): (() => void) => {
+      const handler = (_e: Electron.IpcRendererEvent, t: string): void => cb(t)
+      ipcRenderer.on('ai:delta', handler)
+      return () => ipcRenderer.removeListener('ai:delta', handler)
+    },
+    onDone: (cb: (full: string) => void): (() => void) => {
+      const handler = (_e: Electron.IpcRendererEvent, t: string): void => cb(t)
+      ipcRenderer.on('ai:done', handler)
+      return () => ipcRenderer.removeListener('ai:done', handler)
+    },
+    onError: (cb: (m: string) => void): (() => void) => {
+      const handler = (_e: Electron.IpcRendererEvent, m: string): void => cb(m)
+      ipcRenderer.on('ai:error', handler)
+      return () => ipcRenderer.removeListener('ai:error', handler)
     }
   },
   win: {

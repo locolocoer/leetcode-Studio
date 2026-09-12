@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type {
-  AuthStatus, CatalogEntry, DebugSnapshot, Language, Problem, RunResult, Settings, SubmitVerdict, TestCase, ToolchainStatus,
-  UpdateStatus
+  AiMessage, AuthStatus, CatalogEntry, DebugSnapshot, Language, Problem, RunResult, Settings, SubmitVerdict,
+  TestCase, ToolchainStatus, UpdateStatus
 } from '../../shared/types'
 import Sidebar from './components/Sidebar'
 import ProblemPanel from './components/ProblemPanel'
@@ -15,6 +15,7 @@ import LoginModal from './components/LoginModal'
 import SubmitResultModal from './components/SubmitResultModal'
 import SolutionModal from './components/SolutionModal'
 import WindowControls from './components/WindowControls'
+import AiPanel from './components/AiPanel'
 
 const LANGS: Language[] = ['python', 'java', 'cpp', 'c']
 
@@ -28,7 +29,7 @@ export default function App() {
   const [running, setRunning] = useState(false)
   const [toolchains, setToolchains] = useState<Record<Language, ToolchainStatus>>({} as any)
   const [settings, setSettings] = useState<Settings>({ toolpaths: {}, timeLimitMs: 4000, theme: 'dark' })
-  const [rightTab, setRightTab] = useState<'run' | 'debug' | 'settings'>('run')
+  const [rightTab, setRightTab] = useState<'run' | 'debug' | 'ai' | 'settings'>('run')
   const [fetchOpen, setFetchOpen] = useState(false)
   const [localOpen, setLocalOpen] = useState(false)
   const [localErr, setLocalErr] = useState<string | null>(null)
@@ -50,6 +51,8 @@ export default function App() {
   const [solutionOpen, setSolutionOpen] = useState(false)
   const [notice, setNotice] = useState<string | null>(null)
   const [updateState, setUpdateState] = useState<UpdateStatus>({ state: 'idle' })
+  // AI 助手对话按题目保存（会话内）
+  const [aiChats, setAiChats] = useState<Record<string, AiMessage[]>>({})
 
   // 编辑器 / 底部面板的分割高度（可拖动）
   const rightPaneRef = useRef<HTMLDivElement>(null)
@@ -568,6 +571,13 @@ export default function App() {
               🐞 逐步调试
               {debugSnap?.status === 'paused' && <span className="badge">第 {debugSnap.pausedAt} 行</span>}
             </div>
+            <div className={`right-tab ${rightTab === 'ai' ? 'active' : ''}`} onClick={() => setRightTab('ai')} title="AI 做题助手：只给思路与提示，不直接给答案">
+              🤖 AI 助手
+              {(() => {
+                const n = active ? (aiChats[active.id]?.length || 0) : 0
+                return n ? <span className="badge">{Math.ceil(n / 2)}</span> : null
+              })()}
+            </div>
             <div className={`right-tab ${rightTab === 'settings' ? 'active' : ''}`} onClick={() => setRightTab('settings')}>⚙ 设置</div>
           </div>
           <div className="right-body">
@@ -594,6 +604,22 @@ export default function App() {
                   setDebugSnap((s) => (s ? { ...s, status: 'finished' } : s))
                 }}
                 programOutput={debugOutput}
+              />
+            )}
+            {rightTab === 'ai' && (
+              <AiPanel
+                problem={active}
+                language={language}
+                code={activeCode}
+                result={result}
+                debugSnap={debugSnap}
+                noAnswer={settings.aiNoAnswer !== false}
+                history={active ? (aiChats[active.id] || []) : []}
+                onHistory={(m) => {
+                  if (!active) return
+                  setAiChats((c) => ({ ...c, [active.id]: m }))
+                }}
+                onOpenSettings={() => setRightTab('settings')}
               />
             )}
             {rightTab === 'settings' && (

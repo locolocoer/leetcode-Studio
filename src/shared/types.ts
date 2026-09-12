@@ -142,6 +142,53 @@ export interface Settings {
   lcUsername?: string
   // 题面语言：zh=中文（leetcode.cn 翻译题面）en=英文
   contentLang?: 'zh' | 'en'
+  // ---- AI 做题助手（OpenAI 兼容接口）----
+  aiBaseUrl?: string
+  aiModel?: string
+  aiApiKey?: string
+  /** 严格模式：绝不给出完整题解（默认开启） */
+  aiNoAnswer?: boolean
+}
+
+// ---- AI 助手 ----
+export type AiRole = 'system' | 'user' | 'assistant'
+
+export interface AiMessage {
+  role: AiRole
+  content: string
+}
+
+export type AiMode = 'hint' | 'debug' | 'chat'
+
+/** 发送给主进程的上下文（由渲染进程按需组装） */
+export interface AiContext {
+  problemTitle?: string
+  problemContent?: string
+  signature?: string
+  language?: string
+  code?: string
+  /** 最近一次运行结果摘要 */
+  runResult?: string
+  /** 调试暂停状态摘要 */
+  debugState?: string
+}
+
+export interface AiChatRequest {
+  context: AiContext
+  history: AiMessage[]
+  /** 本轮用户输入（可为空，表示点的是快捷动作） */
+  input?: string
+  mode: AiMode
+  /** 已给出多少个提示（用于逐级提升） */
+  hintLevel: number
+  /** 严格模式：不得给出完整题解 */
+  noAnswer: boolean
+}
+
+export interface AiTestResult {
+  ok: boolean
+  message: string
+  model?: string
 }
 
 export interface AuthStatus {

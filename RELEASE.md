@@ -1,30 +1,35 @@
-# LeetCode Studio 1.0.3 发布说明
+# LeetCode Studio 1.1.0 发布说明
 
-本地 LeetCode 刷题桌面应用：多语言编译运行、逐步调试、查看题解、账号登录与一键提交。
+本地 LeetCode 刷题桌面应用：多语言编译运行、逐步调试、查看题解、AI 引导、账号登录与一键提交。
 所有编译器与运行时已内置于安装包，**无需另外安装 Python / JDK / GCC**。
 
-- 版本：1.0.3
+- 版本：1.1.0
 - 平台：Windows 10 / 11（x64）
 - 仓库：<https://github.com/locolocoer/leetcode-Studio>
 - 下载：<https://github.com/locolocoer/leetcode-Studio/releases>
 
-## 本版更新（1.0.3）
+## 本版更新（1.1.0）
 
-- 国内更新源确定为 **`https://leetcode-studio.oss-cn-beijing.aliyuncs.com/`**（`leetcode-studio` 桶）。
-- 发版流程：OSS 上传带 `--acl public-read`（并保留失败不阻塞发版），新增「更新源可匿名读取」探活步骤，权限问题会在 CI 直接报错并给出原因提示。
+**新增 🤖 AI 做题助手**（`AI 助手` 标签页，设置页可配置）
 
-### 1.0.1 / 1.0.2
+- **分级提示**：点「给我一个提示」每次只升一级——① 复述题目关键条件与目标 → ② 引导性提问 → ③ 思路方向 → ④ 步骤骨架 → ⑤ 只给卡点的 ≤3 行关键代码；第 5 级后不再升级，改为换角度解释或拆更小的子问题。**绝不输出完整题解**。
+- **纠错**：带上你的代码、失败用例（输入/期望/实际/报错）与调试暂停时的变量，先复述你的意图，再指出第一处问题与原因，并反问确认，不重写整个函数。
+- **上下文可控**：可勾选「带上我的代码」「带上运行结果」；调试暂停时自动附变量现场。
+- **交互**：对话按题目保存、流式输出、可停止、可清空；提示等级在工具栏右侧显示。
+- **接入**：任意 OpenAI 兼容接口，内置 DeepSeek / OpenAI / Moonshot / 智谱 / 本地 Ollama 预设，支持「保存并测试连接」。Key 只存本机设置文件，请求由主进程直连。
+- **严格模式**默认开启（设置页可关闭）。
 
-- 自动更新全过程写入 `%APPDATA%\leetcode-studio\.runtime\updater.log`，方便排查「检查不到更新」。
-- 设置页「关于与更新」读取全局状态：切到设置页也能看到最近一次检查结果，下载中显示进度条。
-- 新增 `LC_UI_DEBUG_PORT` 环境变量：打包版可用 Chromium 调试端口做界面自动化检查（默认不开）。
+### 1.0.3
+
+- 国内更新源：`https://leetcode-studio.oss-cn-beijing.aliyuncs.com/`；上传带 `--acl public-read` 并新增「更新源可匿名读取」探活。
+- 自动更新日志写入 `%APPDATA%\leetcode-studio\.runtime\updater.log`；设置页「关于与更新」显示检查/下载状态与进度。
 
 ## 发布产物
 
 | 文件 | 大小 | 说明 |
 | --- | --- | --- |
-| `LeetCode-Studio-1.0.3-setup.exe` | ≈172 MB | 安装版（推荐）：可自选目录、创建快捷方式、支持自动更新 |
-| `LeetCode-Studio-1.0.3-portable.exe` | ≈172 MB | 免安装便携版：双击即用（首次启动需解压内置工具链到临时目录，约 1 分钟） |
+| `LeetCode-Studio-1.1.0-setup.exe` | ≈172 MB | 安装版（推荐）：可自选目录、创建快捷方式、支持自动更新 |
+| `LeetCode-Studio-1.1.0-portable.exe` | ≈172 MB | 免安装便携版：双击即用（首次启动需解压内置工具链到临时目录，约 1 分钟） |
 | `latest.yml` | — | 自动更新元数据（electron-builder 生成，随 Release 发布，含安装包 sha512） |
 
 > 文件名不带空格，确保自动更新的 `latest.yml` 与实际文件名一致。

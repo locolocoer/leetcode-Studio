@@ -49,7 +49,15 @@ export class Store {
   }
 
   loadSettings(): Settings {
-    const defaults: Settings = { toolpaths: {}, timeLimitMs: 4000, theme: 'dark', contentLang: 'zh' }
+    const defaults: Settings = {
+      toolpaths: {},
+      timeLimitMs: 4000,
+      theme: 'dark',
+      contentLang: 'zh',
+      aiBaseUrl: 'https://api.deepseek.com',
+      aiModel: 'deepseek-chat',
+      aiNoAnswer: true
+    }
     if (!existsSync(this.settingsPath)) return defaults
     try {
       const s = JSON.parse(readFileSync(this.settingsPath, 'utf8'))
