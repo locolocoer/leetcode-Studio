@@ -16,6 +16,31 @@ function toolchainEnv(tc: ToolchainStatus): NodeJS.ProcessEnv {
   return env
 }
 
+/**
+ * Windows 上残留的进程（上一次调试的 main.exe / java.exe）会锁住编译产物，
+ * 表现为 `ld.exe: cannot open output file main.exe: Permission denied`。
+ */
+export function isLockError(output: string): boolean {
+  return /Permission denied|being used by another process|EBUSY|EPERM|EACCES|Access is denied|另一个程序正在使用|拒绝访问|无法访问|text file busy/i
+    .test(output || '')
+}
+
+/** 结束所有「可执行文件位于该目录下」的进程（按路径匹配，不会误杀同名程序） */
+export function killProcessesUnder(dir: string): void {
+  if (process.platform !== 'win32') return
+  const d = dir.replace(/'/g, "''")
+  const script = [
+    `$d = '${d}';`,
+    'Get-CimInstance Win32_Process -ErrorAction SilentlyContinue |',
+    'Where-Object { $_.ExecutablePath -and $_.ExecutablePath.StartsWith($d, [System.StringComparison]::OrdinalIgnoreCase) } |',
+    'ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }'
+  ].join(' ')
+  try {
+    execFileSync('powershell', ['-NoProfile', '-NonInteractive', '-Command', script],
+      { stdio: 'ignore', timeout: 15000 })
+  } catch { /* 清理失败就走重试/报错 */ }
+}
+
 function deepEqual(a: unknown, b: unknown): boolean {
   if (a === b) return true
   if (typeof a !== typeof b) return false
@@ -160,15 +185,30 @@ export async function runAll(
   if (harness.compile) {
     const cmd = harness.compile.cmd
     const realCmd = tc.compilerPath || cmd
-    try {
-      compileOutput = execFileSync(realCmd, harness.compile.args, {
-        cwd: dir,
-        encoding: 'utf8',
-        timeout: 20000,
-        env: toolchainEnv(tc)
-      })
-    } catch (e: any) {
-      const errOut = (e?.stdout || '') + (e?.stderr || '') + (e?.message || '')
+    let lastErr = ''
+    for (let attempt = 0; attempt < 2; attempt++) {
+      try {
+        compileOutput = execFileSync(realCmd, harness.compile.args, {
+          cwd: dir,
+          encoding: 'utf8',
+          timeout: 20000,
+          env: toolchainEnv(tc)
+        })
+        lastErr = ''
+        break
+      } catch (e: any) {
+        lastErr = (e?.stdout || '') + (e?.stderr || '') + (e?.message || '')
+        // 上一次运行/调试残留的进程会锁住产物（Windows 常见），清掉后重试一次
+        if (attempt === 0 && isLockError(lastErr)) {
+          killProcessesUnder(dir)
+          await new Promise((r) => setTimeout(r, 300))
+          continue
+        }
+        break
+      }
+    }
+    if (lastErr) {
+      const errOut = lastErr
       return {
         ok: false,
         compileFailed: true,

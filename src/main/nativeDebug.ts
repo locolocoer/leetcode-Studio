@@ -1,6 +1,6 @@
 // Native step-debug backend: gdb for C/C++ (jdb for Java planned).
 // Events follow DebugEvent (kind line|breakpoint|finished|error).
-import { spawn, type ChildProcess } from 'child_process'
+import { spawn, execFileSync, type ChildProcess } from 'child_process'
 import { createServer } from 'net'
 import type { DebugEvent } from '../shared/types'
 
@@ -34,6 +34,19 @@ function fileIsUser(fname: string, lang: string): boolean {
 function capVal(v: string, max = 300): string {
   const s = (v || '').replace(/\\"/g, '"').replace(/\\\\/g, '\\')
   return s.length > max ? s.slice(0, max) + '...' : s
+}
+
+/**
+ * 结束整棵进程树。Windows 下只杀 gdb/jdb 不会带走被调试的程序
+ * （main.exe / java.exe），残留进程会锁住会话目录 → 下次链接报 Permission denied。
+ */
+function killTree(child: ChildProcess | null): void {
+  if (!child || !child.pid) return
+  const pid = child.pid
+  if (process.platform === 'win32') {
+    try { execFileSync('taskkill', ['/PID', String(pid), '/T', '/F'], { stdio: 'ignore', timeout: 8000 }) } catch {}
+  }
+  try { child.kill('SIGKILL') } catch {}
 }
 
 export function startGdbRunner(o: NativeOpts): NativeRunner {  let child: ChildProcess | null = null
@@ -379,7 +392,7 @@ export function startGdbRunner(o: NativeOpts): NativeRunner {  let child: ChildP
     },
     stop: () => {
       done = true
-      try { child?.kill('SIGKILL') } catch {}
+      killTree(child)
     }
   }
 }
@@ -625,8 +638,8 @@ export function startJdbRunner(o: JdbOpts): NativeRunner {
     },
     stop: () => {
       done = true
-      try { child?.kill('SIGKILL') } catch {}
-      try { javaChild?.kill('SIGKILL') } catch {}
+      killTree(child)
+      killTree(javaChild)
     }
   }
 }

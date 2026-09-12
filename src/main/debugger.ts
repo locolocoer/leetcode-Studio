@@ -4,7 +4,7 @@ import { join, dirname, delimiter } from 'path'
 import type {
   DebugEvent, DebugSnapshot, Language, Problem, TestCase, ToolchainStatus
 } from '../shared/types'
-import { sanitize } from './runner'
+import { sanitize, isLockError, killProcessesUnder } from './runner'
 import { buildHarness, intersectIndices, pyShapes, pyIndent, isNodeReturn, PY_NODES } from './harness'
 import { startGdbRunner, startJdbRunner, type NativeRunner } from './nativeDebug'
 
@@ -13,6 +13,11 @@ export type DebuggerEvents = {
   onOutput?: (text: string) => void
   onDone?: (finished: boolean) => void
 }
+
+// 调试产物的「残留进程」处理见 runner.ts 的 isLockError / killProcessesUnder：
+// Windows 上杀掉 gdb / jdb 不会带走被调试的程序，残留进程会锁住会话目录，
+// 导致下一次链接报 `ld.exe: cannot open output file main.exe: Permission denied`。
+const sleepMs = (ms: number) => new Promise((r) => setTimeout(r, ms))
 
 const PY_DEBUG_SCRIPT = `#!/usr/bin/env python3
 import sys, json, os
@@ -257,6 +262,13 @@ export class DebugSession {
     runtimeDir: string,
     breakpoints: number[]
   ): Promise<DebugSnapshot> {
+    // 起新会话前先彻底结束上一次：残留的 gdb/java 与被调试程序会锁住会话目录
+    try { this.native?.stop() } catch {}
+    this.native = null
+    try { this.child?.kill('SIGKILL') } catch {}
+    this.child = null
+    this.clearWatchdog()
+
     if (language !== 'python' && language !== 'c' && language !== 'cpp' && language !== 'java') {
       this.snap = { status: 'error', events: [], programOutput: '', language, error: '不支持该语言调试。' }
       return this.snap
@@ -572,16 +584,38 @@ const char* lc_show(const std::unordered_set<int>& s) { return lc__ret(lc__set(s
     }
 
     const compiler = toolchain.compilerPath || (language === 'cpp' ? 'g++' : 'gcc')
-    const compileArgs = language === 'cpp'
-      ? ['-std=c++17', '-g', '-O0', '-static', 'main.cpp', '-o', 'main.exe']
-      : ['-g', '-O0', '-static', 'main.c', '-o', 'main.exe']
     const env: NodeJS.ProcessEnv = { ...process.env }
     if (toolchain.compilerPath) env.PATH = dirname(toolchain.compilerPath) + delimiter + (env.PATH || '')
-    try {
-      execFileSync(compiler, compileArgs, { cwd: dir, encoding: 'utf8', timeout: 30000, env })
-    } catch (e: any) {
-      const errOut = (e?.stdout || '') + (e?.stderr || '')
-      this.snap = { status: 'error', events: [], programOutput: '', language, error: '编译失败（已加 -g 调试信息）：\n' + errOut.slice(0, 1500) }
+
+    // 链接时若 main.exe 仍被上一次调试的残留进程占用，先清理再重试，必要时换输出名
+    let exeName = 'main.exe'
+    let compileErr = ''
+    for (let attempt = 0; attempt < 3; attempt++) {
+      const args = language === 'cpp'
+        ? ['-std=c++17', '-g', '-O0', '-static', 'main.cpp', '-o', exeName]
+        : ['-g', '-O0', '-static', 'main.c', '-o', exeName]
+      try {
+        execFileSync(compiler, args, { cwd: dir, encoding: 'utf8', timeout: 30000, env })
+        compileErr = ''
+        break
+      } catch (e: any) {
+        compileErr = ((e?.stdout || '') + (e?.stderr || '')).toString()
+        if (!isLockError(compileErr)) break
+        if (attempt === 0) {
+          this.log('编译产物被占用，清理残留调试进程后重试')
+          killProcessesUnder(dir)
+          await sleepMs(400)
+        } else {
+          exeName = `main-${Date.now().toString().slice(-6)}.exe`
+          this.log('仍被占用，改用输出名 ' + exeName)
+        }
+      }
+    }
+    if (compileErr) {
+      this.snap = {
+        status: 'error', events: [], programOutput: '', language,
+        error: '编译失败（已加 -g 调试信息）：\n' + compileErr.slice(0, 1500)
+      }
       return this.snap
     }
 
@@ -598,7 +632,7 @@ const char* lc_show(const std::unordered_set<int>& s) { return lc__ret(lc__set(s
 
     const runner = startGdbRunner({
       lang: language,
-      exe: './main.exe',
+      exe: './' + exeName,
       cwd: dir,
       env: gdbEnv,
       methodName: problem.methodName,
@@ -786,11 +820,27 @@ public class LcDbg {
     const javac = toolchain.compilerPath || 'javac'
     const env: NodeJS.ProcessEnv = { ...process.env }
     if (toolchain.compilerPath) env.PATH = dirname(toolchain.compilerPath) + delimiter + (env.PATH || '')
-    try {
-      execFileSync(javac, ['-g', className + '.java', 'Main.java', 'LcDbg.java'], { cwd: dir, encoding: 'utf8', timeout: 30000, env })
-    } catch (e: any) {
-      const errOut = (e?.stdout || '') + (e?.stderr || '')
-      this.snap = { status: 'error', events: [], programOutput: '', language: 'java', error: '编译失败：\n' + errOut.slice(0, 1500) }
+    const javacArgs = ['-g', className + '.java', 'Main.java', 'LcDbg.java']
+    let javaErr = ''
+    for (let attempt = 0; attempt < 2; attempt++) {
+      try {
+        execFileSync(javac, javacArgs, { cwd: dir, encoding: 'utf8', timeout: 30000, env })
+        javaErr = ''
+        break
+      } catch (e: any) {
+        javaErr = ((e?.stdout || '') + (e?.stderr || '')).toString()
+        // 上一次调试残留的 java.exe 会锁住 class 文件
+        if (attempt === 0 && isLockError(javaErr)) {
+          this.log('class 文件被占用，清理残留调试进程后重试')
+          killProcessesUnder(dir)
+          await sleepMs(400)
+          continue
+        }
+        break
+      }
+    }
+    if (javaErr) {
+      this.snap = { status: 'error', events: [], programOutput: '', language: 'java', error: '编译失败：\n' + javaErr.slice(0, 1500) }
       return this.snap
     }
 
