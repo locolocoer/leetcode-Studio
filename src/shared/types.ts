@@ -145,10 +145,12 @@ export interface FetchedProblemListEntry {
   slug: string
   title: string
   titleCn?: string
+  /** 英文标题（中文题面时也带上，两种语言都能搜到） */
+  titleEn?: string
   difficulty: Difficulty
   paidOnly?: boolean
   tags?: string[]
-  frontendId?: number
+  frontendId?: number | string
 }
 
 export interface FetchResult {

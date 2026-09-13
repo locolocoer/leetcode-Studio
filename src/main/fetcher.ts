@@ -1,3 +1,5 @@
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs'
+import { join } from 'path'
 import type {
   CatalogEntry, Difficulty, FetchedProblemListEntry, Language, Method, Param, Problem, SolutionDetail,
   SolutionItem, SolutionListResult, SolutionOrderBy, TestCase
@@ -26,24 +28,6 @@ function langMap(langSlug: string): Language | null {
   return null
 }
 
-export async function fetchProblemList(): Promise<FetchedProblemListEntry[]> {
-  const res = await fetch('https://leetcode.com/api/problems/all/', {
-    headers: { 'User-Agent': UA }
-  })
-  if (!res.ok) throw new Error(`题目列表请求失败：HTTP ${res.status}`)
-  const data: any = await res.json()
-  const pairs = data?.stat_status_pairs || []
-  return pairs.map((p: any) => {
-    const stat = p.stat || {}
-    return {
-      slug: stat.question__title_slug || '',
-      title: stat.question__title || '',
-      difficulty: diffFromLevel(p.difficulty?.level ?? 2),
-      paidOnly: !!p.paid_only,
-      frontendId: stat.frontend_question_id
-    } as FetchedProblemListEntry
-  })
-}
 
 const QUESTION_QUERY = `query getQuestionDetail($titleSlug: String!) {
   question(titleSlug: $titleSlug) {
@@ -132,8 +116,7 @@ export async function fetchProblemDetail(slug: string, host?: string): Promise<P
 
 // Daily coding challenge. The daily query is only exposed on leetcode.com, so we
 // always resolve today's slug there, then fetch the details from the chosen host.
-export async function fetchDaily(host?: string): Promise<{ problem: Problem; date: string }> {
-  const res = await fetch(GRAPHQL_COM, {
+export async function fetchDaily(host?: string): Promise<{ problem: Problem; date: string }> {  const res = await fetch(GRAPHQL_COM, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'User-Agent': UA, Referer: 'https://leetcode.com/problemset/' },
     body: JSON.stringify({
@@ -147,6 +130,141 @@ export async function fetchDaily(host?: string): Promise<{ problem: Problem; dat
   if (!d?.question?.titleSlug) throw new Error('未能获取每日一题信息')
   const problem = await fetchProblemDetail(d.question.titleSlug, host)
   return { problem, date: d.date }
+}
+
+// ---------------------------------------------------------------------------
+// 题目索引（「拉取题目」弹窗里的列表）
+//
+// 以前固定用 leetcode.com 的 /api/problems/all/，标题永远是英文、也不跟题面语言。
+// 现在按题面语言取：
+//   zh → leetcode.cn 的 problemsetQuestionList（titleCn 是中文标题），分页取全量后缓存到本地
+//   en → leetcode.com 的 /api/problems/all/（一次请求拿全量）
+// ---------------------------------------------------------------------------
+
+interface IndexedProblem extends FetchedProblemListEntry {
+  titleEn?: string
+  frontendId?: string | number
+}
+
+const INDEX_TTL_MS = 7 * 24 * 3600 * 1000
+
+function indexCacheFile(dir: string, lang: 'zh' | 'en'): string {
+  return join(dir, `problem-index-${lang}.json`)
+}
+
+function readIndexCache(dir: string, lang: 'zh' | 'en'): IndexedProblem[] | null {
+  try {
+    const f = indexCacheFile(dir, lang)
+    if (!existsSync(f)) return null
+    const j = JSON.parse(readFileSync(f, 'utf8'))
+    if (!j?.at || Date.now() - j.at > INDEX_TTL_MS) return null
+    return Array.isArray(j.items) && j.items.length ? j.items : null
+  } catch {
+    return null
+  }
+}
+
+function writeIndexCache(dir: string, lang: 'zh' | 'en', items: IndexedProblem[]): void {
+  try {
+    mkdirSync(dir, { recursive: true })
+    writeFileSync(indexCacheFile(dir, lang), JSON.stringify({ at: Date.now(), items }), 'utf8')
+  } catch {
+    /* 缓存失败不影响使用 */
+  }
+}
+
+const CN_LIST_QUERY = `query problemsetQuestionList($categorySlug: String, $limit: Int, $skip: Int, $filters: QuestionListFilterInput) {
+  problemsetQuestionList(categorySlug: $categorySlug, limit: $limit, skip: $skip, filters: $filters) {
+    total
+    questions { frontendQuestionId title titleCn titleSlug difficulty paidOnly }
+  }
+}`
+
+/** 从 leetcode.cn 分页取全量题目（中文标题） */
+async function fetchCnIndex(): Promise<IndexedProblem[]> {
+  const base = 'https://leetcode.cn'
+  const page = async (skip: number): Promise<{ total: number; items: IndexedProblem[] }> => {
+    const res = await fetch(`${base}/graphql`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'User-Agent': UA, Referer: `${base}/problemset/` },
+      body: JSON.stringify({
+        operationName: 'problemsetQuestionList',
+        variables: { categorySlug: '', skip, limit: 100, filters: {} },
+        query: CN_LIST_QUERY
+      })
+    })
+    if (!res.ok) throw new Error(`题目索引请求失败：HTTP ${res.status}`)
+    const j: any = await res.json()
+    const r = j?.data?.problemsetQuestionList
+    if (!r) throw new Error('题目索引返回为空')
+    const items: IndexedProblem[] = (r.questions || []).map((q: any) => ({
+      slug: q.titleSlug,
+      title: q.titleCn || q.title || '',
+      titleEn: q.title || undefined,
+      difficulty: String(q.difficulty || '').toLowerCase() === 'easy'
+        ? 'easy'
+        : String(q.difficulty || '').toLowerCase() === 'hard' ? 'hard' : 'medium',
+      paidOnly: !!q.paidOnly,
+      frontendId: q.frontendQuestionId
+    }))
+    return { total: r.total || 0, items }
+  }
+
+  const first = await page(0)
+  const total = first.total
+  const out = [...first.items]
+  const skips: number[] = []
+  for (let s = 100; s < total; s += 100) skips.push(s)
+  // 小并发分页，避免打太多请求
+  const CONCURRENCY = 4
+  for (let i = 0; i < skips.length; i += CONCURRENCY) {
+    const batch = skips.slice(i, i + CONCURRENCY)
+    const parts = await Promise.all(batch.map((s) => page(s).catch(() => ({ total: 0, items: [] }))))
+    for (const p of parts) out.push(...p.items)
+  }
+  return out
+}
+
+/** 从 leetcode.com 取全量题目（英文标题，一次请求） */
+async function fetchComIndex(): Promise<IndexedProblem[]> {
+  const res = await fetch('https://leetcode.com/api/problems/all/', { headers: { 'User-Agent': UA } })
+  if (!res.ok) throw new Error(`题目列表请求失败：HTTP ${res.status}`)
+  const data: any = await res.json()
+  const pairs = data?.stat_status_pairs || []
+  return pairs.map((p: any) => {
+    const stat = p.stat || {}
+    return {
+      slug: stat.question__title_slug || '',
+      title: stat.question__title || '',
+      difficulty: diffFromLevel(p.difficulty?.level ?? 2),
+      paidOnly: !!p.paid_only,
+      frontendId: stat.frontend_question_id
+    } as IndexedProblem
+  })
+}
+
+/** 按语言取题目索引（带本地缓存） */
+export async function fetchProblemIndex(host: string | undefined, cacheDir: string): Promise<IndexedProblem[]> {
+  const lang: 'zh' | 'en' = host && /\.com$/i.test(hostBaseHost(host)) ? 'en' : 'zh'
+  const cached = readIndexCache(cacheDir, lang)
+  if (cached) return cached
+  const items = lang === 'zh' ? await fetchCnIndex() : await fetchComIndex()
+  // 两种来源的默认顺序不一样，统一按题号升序（纯数字在前，LCR/面试题在后）
+  items.sort((a, b) => {
+    const na = parseInt(String(a.frontendId ?? ''), 10)
+    const nb = parseInt(String(b.frontendId ?? ''), 10)
+    const aNum = Number.isFinite(na)
+    const bNum = Number.isFinite(nb)
+    if (aNum && bNum && na !== nb) return na - nb
+    if (aNum !== bNum) return aNum ? -1 : 1
+    return String(a.frontendId ?? '').localeCompare(String(b.frontendId ?? ''))
+  })
+  if (items.length) writeIndexCache(cacheDir, lang, items)
+  return items
+}
+
+function hostBaseHost(host?: string): string {
+  return (host || 'leetcode.cn').toLowerCase().replace(/^https?:\/\//, '')
 }
 
 export async function fetchProblemListCatalog(

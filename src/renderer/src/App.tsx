@@ -651,6 +651,7 @@ export default function App() {
 
       <FetchModal
         open={fetchOpen}
+        contentLang={settings.contentLang === 'en' ? 'en' : 'zh'}
         onClose={() => setFetchOpen(false)}
         onAdd={(p) => {
           window.api.problems.update(p).then((list) => {

@@ -9,7 +9,7 @@ import { detectAll, detectToolchain } from './toolchain'
 import { runAll, normalizeManualExpected, viewHarness, verifyHarness, type RunnerContext } from './runner'
 import { initAiHarnessCache, clearHarnessCache, putHarnessOverride, resetHarness } from './aiHarness'
 import {
-  fetchProblemList, fetchProblemDetail, fetchDaily, fetchProblemListCatalog,
+  fetchProblemIndex, fetchProblemDetail, fetchDaily, fetchProblemListCatalog,
   fetchSolutionList, fetchSolutionDetail
 } from './fetcher'
 import { Store } from './store'
@@ -27,6 +27,8 @@ if (process.env.LC_UI_DEBUG_PORT) {
 let mainWindow: BrowserWindow | null = null
 let store: Store
 let runtimeDir: string
+/** 打包后是 userData，开发时是仓库目录 —— 与 store 同级的 .leetcode-studio 就放这下面 */
+let dataDir: string
 let debugSession: DebugSession | null = null
 let lc: LeetCodeClient
 
@@ -142,7 +144,7 @@ function api() {
     getSettings: () => store.loadSettings(),
     saveSettings: (s: Settings) => { store.saveSettings(s); return true },
     detectToolchains: (settings?: Settings) => detectAll(settings),
-    fetchList: () => fetchProblemList(),
+    fetchList: (host?: string) => fetchProblemIndex(host, join(dataDir, '.leetcode-studio')),
     fetchDetail: (slug: string, host?: string) => fetchProblemDetail(slug, host),
     runTests: (problem: Problem, language: Language, source: string, tests: TestCase[]) =>
       runAll(problem, language, source, tests, ctx(), (cr) => onCase(cr)),
@@ -164,6 +166,11 @@ function ctx(): RunnerContext {
 
 function onCase(_cr: unknown) {
   // broadcast progress if needed
+}
+
+/** 粗略判断题面语言：有汉字就是中文 */
+function contentLangOf(content?: string): 'zh' | 'en' {
+  return /[\u4e00-\u9fa5]/.test(String(content || '')) ? 'zh' : 'en'
 }
 
 function setupDebugIPC() {
@@ -192,7 +199,7 @@ function registerIpc() {
   })
   // 题面语言：zh → leetcode.cn（含中文翻译题面）；en → leetcode.com
   const contentHostOf = () => (store.loadSettings().contentLang === 'en' ? 'leetcode.com' : 'leetcode.cn')
-  ipcMain.handle('fetch:list', () => a.fetchList())
+  ipcMain.handle('fetch:list', () => a.fetchList(contentHostOf()))
   ipcMain.handle('fetch:detail', (_e, slug: string, host?: string) => a.fetchDetail(slug, host || contentHostOf()))
   ipcMain.handle('fetch:daily', () => fetchDaily(contentHostOf()))
   // 题单接口只有 leetcode.cn 支持（com 返回空），统一走 cn
@@ -207,7 +214,21 @@ function registerIpc() {
   ipcMain.handle('catalog:set', (_e, entries: CatalogEntry[]) => { store.saveCatalog(entries); return store.loadCatalog() })
   ipcMain.handle('problems:ensure', async (_e, slug: string, host?: string) => {
     const found = store.findProblemBySlug(slug)
-    if (found) return found
+    const want: 'zh' | 'en' = store.loadSettings().contentLang === 'en' ? 'en' : 'zh'
+    if (found) {
+      // 已存的题面语言和当前设置不一致时自动按新语言重拉（例如以前是英文、现在切到中文）
+      if (found.source === 'leetcode' && contentLangOf(found.content) !== want) {
+        const fresh = await fetchProblemDetail(slug, contentHostOf())
+        const merged: Problem = {
+          ...fresh,
+          starters: { ...fresh.starters, ...(found.starters || {}) },
+          tests: found.tests?.length ? found.tests : fresh.tests
+        }
+        store.upsertProblem(merged)
+        return merged
+      }
+      return found
+    }
     const p = await fetchProblemDetail(slug, host || contentHostOf())
     store.upsertProblem(p)
     return p
@@ -453,6 +474,7 @@ app.whenReady().then(() => {
   }
 
   const base = app.isPackaged ? app.getPath('userData') : app.getAppPath()
+  dataDir = base
   runtimeDir = join(base, '.runtime')
   try { writeFileSync(join(runtimeDir, '.keep'), '') } catch {}
   store = new Store(join(base, '.leetcode-studio'))
