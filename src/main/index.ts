@@ -6,8 +6,8 @@ import type {
   AiChatRequest, AppInfo, CatalogEntry, Language, Problem, RunResult, Settings, SolutionOrderBy, TestCase, UpdateStatus
 } from '../shared/types'
 import { detectAll, detectToolchain } from './toolchain'
-import { runAll, normalizeManualExpected, type RunnerContext } from './runner'
-import { initAiHarnessCache, clearHarnessCache } from './aiHarness'
+import { runAll, normalizeManualExpected, viewHarness, verifyHarness, type RunnerContext } from './runner'
+import { initAiHarnessCache, clearHarnessCache, putHarnessOverride, resetHarness } from './aiHarness'
 import {
   fetchProblemList, fetchProblemDetail, fetchDaily, fetchProblemListCatalog,
   fetchSolutionList, fetchSolutionDetail
@@ -243,6 +243,19 @@ function registerIpc() {
   ipcMain.handle('runtime:dir', () => runtimeDir)
   // 清掉 AI 生成的判题模板缓存（换模型/结果不对时可手动重来）
   ipcMain.handle('ai:clearHarness', () => { clearHarnessCache(); return true })
+
+  // 判题模板：查看 / 编辑 / 验证 / 恢复默认
+  ipcMain.handle('harness:view', (_e, p: Problem, lang: Language, src: string) => viewHarness(p, lang, src))
+  ipcMain.handle('harness:reset', (_e, p: Problem, lang: Language) => { resetHarness(p, lang); return true })
+  ipcMain.handle('harness:verify', (_e, p: Problem, lang: Language, src: string, driver: string, tests: TestCase[]) =>
+    verifyHarness(p, lang, src, driver, tests, ctx())
+  )
+  ipcMain.handle('harness:save', async (_e, p: Problem, lang: Language, src: string, driver: string, tests: TestCase[]) => {
+    // 先验证再落盘：通过就以「你编辑的模板」保存；不通过也保存（用户可能想边改边跑），但如实回报结果
+    const r = await verifyHarness(p, lang, src, driver, tests, ctx())
+    putHarnessOverride(p, lang, driver)
+    return r
+  })
 
   // --- AI 做题助手（主进程持有 Key 并组装「不给答案」的提示词）---
   let aiAbort: (() => void) | null = null

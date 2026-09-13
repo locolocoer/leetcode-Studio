@@ -72,7 +72,20 @@ export interface RunResult {
   error?: string
   totalTimeMs?: number
   /** 本次是否用了 AI 生成的判题模板 */
-  aiHarness?: { used: boolean; note?: string }
+  aiHarness?: { used: boolean; note?: string; origin?: 'user' | 'ai' }
+}
+
+/** 判题模板（编译模板）的可查看/可编辑视图 */
+export interface HarnessView {
+  /** 驱动所在文件名，如 main.cpp / Main.java / main.py */
+  file: string
+  /** 可编辑的驱动部分 */
+  driver: string
+  /** 固定脚手架（只读，供参考） */
+  head: string
+  /** 当前生效来源：你编辑的 / AI 生成的 / 内置确定性模板 */
+  origin: 'user' | 'ai' | 'builtin'
+  language: Language
 }
 
 export interface ToolchainStatus {

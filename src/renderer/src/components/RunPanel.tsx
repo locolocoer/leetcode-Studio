@@ -5,23 +5,32 @@ interface Props {
   running: boolean
   /** 运行过程中的提示（如「AI 正在生成判题模板」） */
   note?: string | null
+  /** 打开判题模板编辑器（最后一道保障） */
+  onEditHarness?: () => void
 }
 
-function AiHarnessBadge({ result }: { result: RunResult }) {
+function AiHarnessBadge({ result, onEditHarness }: { result: RunResult; onEditHarness?: () => void }) {
   const info = result.aiHarness
-  if (!info) return null
+  const isUser = info?.origin === 'user'
+  const label = isUser
+    ? '🧩 使用你自己编辑的判题模板'
+    : info?.used
+      ? '🤖 使用了 AI 生成的判题模板'
+      : '🧩 判题模板'
   return (
-    <div
-      className="ai-harness-badge"
-      title="本地判题模板不适配这道题时，会用 AI 生成一份驱动模板；只有通过本题全部用例才会采用，并按题目缓存起来"
-    >
-      {info.used ? '🤖 使用了 AI 生成的判题模板' : '🤖 已尝试 AI 生成判题模板（未采用）'}
-      {info.note ? <span style={{ opacity: 0.75 }}> · {info.note}</span> : null}
+    <div className="ai-harness-badge">
+      {label}
+      {info?.used && info.note && !isUser ? <span style={{ opacity: 0.75 }}> · {info.note}</span> : null}
+      {onEditHarness && (
+        <button className="link-btn" style={{ marginLeft: 8 }} onClick={onEditHarness}>
+          查看/编辑模板
+        </button>
+      )}
     </div>
   )
 }
 
-export default function RunPanel({ result, running, note }: Props) {
+export default function RunPanel({ result, running, note, onEditHarness }: Props) {
   if (running) {
     return (
       <div className="loader">
@@ -35,22 +44,35 @@ export default function RunPanel({ result, running, note }: Props) {
         <div className="ico">▶</div>
         <div className="big">还没有运行结果</div>
         <div className="sub">点左侧「▶ 运行所有用例」，会编译并逐组比对期望输出；本地跑题不消耗 LeetCode 提交次数。</div>
+        {onEditHarness && (
+          <div className="sub" style={{ marginTop: 10 }}>
+            <button className="btn sm ghost" onClick={onEditHarness}>🧩 查看/编辑判题模板</button>
+          </div>
+        )}
       </div>
     )
   }
   if (result.compileFailed) {
     return (
       <div>
-        <AiHarnessBadge result={result} />
+        <AiHarnessBadge result={result} onEditHarness={onEditHarness} />
         <div className="error-text" style={{ marginBottom: 12, fontSize: 14 }}>编译失败</div>
         <pre className="debug-output" style={{ maxHeight: 500 }}>{result.compileOutput || '无输出'}</pre>
+        {onEditHarness && (
+          <div style={{ marginTop: 10 }}>
+            <button className="btn sm" onClick={onEditHarness}>🧩 打开判题模板编辑器</button>
+            <span style={{ marginLeft: 8, fontSize: 12, color: 'var(--text-faint)' }}>
+              模板不对时可以直接改：改完「验证并保存」，这道题就按你的模板判
+            </span>
+          </div>
+        )}
       </div>
     )
   }
   if (result.error) {
     return (
       <div>
-        <AiHarnessBadge result={result} />
+        <AiHarnessBadge result={result} onEditHarness={onEditHarness} />
         <div className="error-text">{result.error}</div>
       </div>
     )
@@ -59,7 +81,7 @@ export default function RunPanel({ result, running, note }: Props) {
   const allPass = passed === result.cases.length
   return (
     <div>
-      <AiHarnessBadge result={result} />
+      <AiHarnessBadge result={result} onEditHarness={onEditHarness} />
       <div className="debug-status">
         <span style={{ color: allPass ? 'var(--green)' : 'var(--red)', fontWeight: 600 }}>
           {allPass ? '✓ ' : '✗ '}{passed} / {result.cases.length} 通过

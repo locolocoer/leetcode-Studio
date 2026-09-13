@@ -199,40 +199,40 @@ export function assembleHarness(
   base: Harness,
   aiCode: string
 ): Harness | null {
-  const solution = base.files.find((f) => f.name === base.solutionFile)
-  if (!solution) return null
-  const mainName = language === 'java' ? 'Main.java' : language === 'python' ? 'main.py' : language === 'c' ? 'main.c' : 'main.cpp'
-  const driverFile = base.files.find((f) => f.name === mainName)
-  if (!driverFile) return null
-
-  let head = ''
-  if (language === 'cpp' || language === 'c') {
-    const i = driverFile.content.lastIndexOf('int main(')
-    if (i < 0) return null
-    head = driverFile.content.slice(0, i)
-  } else if (language === 'python') {
-    const i = driverFile.content.lastIndexOf('def main(')
-    if (i < 0) return null
-    head = driverFile.content.slice(0, i)
-  } else {
-    // Java：工具类在前，Main 单独给
-    const i = driverFile.content.indexOf('public class Main')
-    if (i < 0) return null
-    head = driverFile.content.slice(0, i)
-  }
-
-  const content =
-    language === 'java'
-      ? head + aiCode.trim() + '\n'
-      : head + aiCode.trim() + '\n'
-
+  const split = splitHarness(language, base)
+  if (!split) return null
+  const mainName = driverFileName(language)
+  const content = split.head + aiCode.trim() + '\n'
   const files = base.files.map((f) => (f.name === mainName ? { ...f, content } : f))
   return { ...base, files }
 }
 
-/** 缓存：题目+语言+签名 → 已验证的驱动代码 */
+/** 驱动文件名（可编辑的那一份） */
+export function driverFileName(language: Language): string {
+  return language === 'java' ? 'Main.java' : language === 'python' ? 'main.py' : language === 'c' ? 'main.c' : 'main.cpp'
+}
+
+/**
+ * 把完整模板拆成「脚手架 + 驱动」：脚手架是固定部分（JSON 解析、节点构造、序列化…），
+ * 用户/模型只需要看和改驱动那一小段。
+ */
+export function splitHarness(language: Language, harness: Harness): { head: string; driver: string; file: string } | null {
+  const name = driverFileName(language)
+  const file = harness.files.find((f) => f.name === name)
+  if (!file) return null
+  let i = -1
+  if (language === 'cpp' || language === 'c') i = file.content.lastIndexOf('int main(')
+  else if (language === 'python') i = file.content.lastIndexOf('def main(')
+  else i = file.content.indexOf('public class Main')
+  if (i < 0) return null
+  return { head: file.content.slice(0, i), driver: file.content.slice(i), file: name }
+}
+
+/** 缓存/覆盖：题目+语言+签名 → 驱动代码 */
+export type HarnessSource = 'ai' | 'user'
 interface CacheEntry {
   code: string
+  source: HarnessSource
   at: number
 }
 type CacheMap = Record<string, CacheEntry>
@@ -263,14 +263,8 @@ function cacheKey(problem: Problem, language: Language): string {
   return `${problem.id || problem.slug || 'x'}:${language}:${h}`
 }
 
-export function getCachedHarness(problem: Problem, language: Language): string | null {
-  if (!cache) return null
-  return cache[cacheKey(problem, language)]?.code ?? null
-}
-
-export function putCachedHarness(problem: Problem, language: Language, code: string): void {
+function persist(): void {
   if (!cache || !cachePath) return
-  cache[cacheKey(problem, language)] = { code, at: Date.now() }
   try {
     mkdirSync(dirname(cachePath), { recursive: true })
     writeFileSync(cachePath, JSON.stringify(cache, null, 1), 'utf8')
@@ -279,11 +273,38 @@ export function putCachedHarness(problem: Problem, language: Language, code: str
   }
 }
 
+export function getHarnessEntry(problem: Problem, language: Language): CacheEntry | null {
+  if (!cache) return null
+  return cache[cacheKey(problem, language)] ?? null
+}
+
+export function getCachedHarness(problem: Problem, language: Language): string | null {
+  return getHarnessEntry(problem, language)?.code ?? null
+}
+
+export function putCachedHarness(problem: Problem, language: Language, code: string): void {
+  if (!cache) return
+  cache[cacheKey(problem, language)] = { code, source: 'ai', at: Date.now() }
+  persist()
+}
+
+/** 用户手写的模板：优先级最高，且不再让 AI 介入 */
+export function putHarnessOverride(problem: Problem, language: Language, code: string): void {
+  if (!cache) return
+  cache[cacheKey(problem, language)] = { code, source: 'user', at: Date.now() }
+  persist()
+}
+
+/** 撤销某题的模板（回到确定性模板） */
+export function resetHarness(problem: Problem, language: Language): void {
+  if (!cache) return
+  delete cache[cacheKey(problem, language)]
+  persist()
+}
+
 export function clearHarnessCache(): void {
   cache = {}
-  if (cachePath) {
-    try { writeFileSync(cachePath, '{}', 'utf8') } catch { /* ignore */ }
-  }
+  persist()
 }
 
 /**

@@ -14,6 +14,7 @@ import ListModal from './components/ListModal'
 import LoginModal from './components/LoginModal'
 import SubmitResultModal from './components/SubmitResultModal'
 import SolutionModal from './components/SolutionModal'
+import HarnessModal from './components/HarnessModal'
 import WindowControls from './components/WindowControls'
 import AiPanel from './components/AiPanel'
 
@@ -28,6 +29,7 @@ export default function App() {
   const [result, setResult] = useState<RunResult | null>(null)
   const [running, setRunning] = useState(false)
   const [runNote, setRunNote] = useState<string | null>(null)
+  const [harnessOpen, setHarnessOpen] = useState(false)
   const [toolchains, setToolchains] = useState<Record<Language, ToolchainStatus>>({} as any)
   const [settings, setSettings] = useState<Settings>({ toolpaths: {}, timeLimitMs: 4000, theme: 'dark' })
   const [rightTab, setRightTab] = useState<'run' | 'debug' | 'ai' | 'settings'>('run')
@@ -586,7 +588,14 @@ export default function App() {
             <div className={`right-tab ${rightTab === 'settings' ? 'active' : ''}`} onClick={() => setRightTab('settings')}>⚙ 设置</div>
           </div>
           <div className="right-body">
-            {rightTab === 'run' && <RunPanel result={result} running={running} note={runNote} />}
+            {rightTab === 'run' && (
+            <RunPanel
+              result={result}
+              running={running}
+              note={runNote}
+              onEditHarness={active ? () => setHarnessOpen(true) : undefined}
+            />
+          )}
             {rightTab === 'debug' && (
               <DebugPanel
                 snapshot={debugSnap}
@@ -698,6 +707,17 @@ export default function App() {
 
       {solutionOpen && active && (
         <SolutionModal problem={active} onClose={() => setSolutionOpen(false)} />
+      )}
+
+      {harnessOpen && active && (
+        <HarnessModal
+          problem={active}
+          language={language}
+          code={activeCode}
+          tests={tests}
+          onClose={() => setHarnessOpen(false)}
+          onApplied={(r) => { if (r) setResult(r) }}
+        />
       )}
 
       {/* 更新提示条：发现新版本 / 下载完成时显示 */}

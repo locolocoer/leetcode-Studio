@@ -2,10 +2,10 @@ import { spawn, execFileSync } from 'child_process'
 import { mkdirSync, writeFileSync, existsSync, rmSync } from 'fs'
 import { join, dirname, delimiter } from 'path'
 import type {
-  CaseResult, Language, Problem, RunResult, Settings, TestCase, ToolchainStatus
+  CaseResult, HarnessView, Language, Problem, RunResult, Settings, TestCase, ToolchainStatus
 } from '../shared/types'
 import { buildHarness, type Harness } from './harness'
-import { generateHarness, getCachedHarness, assembleHarness } from './aiHarness'
+import { generateHarness, getHarnessEntry, assembleHarness, splitHarness } from './aiHarness'
 
 const RUNNER_TIMEOUT_MS_DEFAULT = 4000
 
@@ -302,16 +302,23 @@ export async function runAll(
   const base = buildHarness(problem, language, sourceCode)
   const aiEnabled = ctx.settings.autoHarness !== false && !!(ctx.settings.aiApiKey || '').trim()
 
-  // 1) 用过并验证通过的 AI 模板（缓存）优先
-  if (aiEnabled) {
-    const cached = getCachedHarness(problem, language)
-    if (cached) {
-      const h = assembleHarness(language, base, cached)
-      if (h) {
-        const r = await runWithHarness(problem, language, sourceCode, tests, ctx, tc, h, onTest)
-        if (r.ok) {
-          return { ...r, aiHarness: { used: true, note: '使用已完成验证的 AI 适配模板（本地缓存）' } }
-        }
+  // 0) 用户手写的模板优先：用了它就不再让 AI 介入（用户明确选择了自己负责）
+  const entry = getHarnessEntry(problem, language)
+  if (entry?.source === 'user') {
+    const h = assembleHarness(language, base, entry.code)
+    if (h) {
+      const r = await runWithHarness(problem, language, sourceCode, tests, ctx, tc, h, onTest)
+      return { ...r, aiHarness: { used: false, origin: 'user', note: '使用你自己编辑的判题模板' } }
+    }
+  }
+
+  // 1) 用过并验证通过的 AI 模板（缓存）
+  if (aiEnabled && entry) {
+    const h = assembleHarness(language, base, entry.code)
+    if (h) {
+      const r = await runWithHarness(problem, language, sourceCode, tests, ctx, tc, h, onTest)
+      if (r.ok) {
+        return { ...r, aiHarness: { used: true, origin: 'ai', note: '使用已完成验证的 AI 适配模板（本地缓存）' } }
       }
     }
   }
@@ -354,11 +361,51 @@ export async function runAll(
   }
   ctx.onNote?.('AI 模板验证通过，正在用它重新运行…')
   const second = await runWithHarness(problem, language, sourceCode, tests, ctx, tc, gen.harness, onTest)
-  return { ...second, aiHarness: { used: true, note: 'AI 生成并通过本题用例验证（已缓存）' } }
+  return { ...second, aiHarness: { used: true, origin: 'ai', note: 'AI 生成并通过本题用例验证（已缓存）' } }
 }
 
 export function sanitize(s: string): string {
   return s.replace(/[^a-zA-Z0-9_-]/g, '_')
+}
+
+// ---------------------------------------------------------------------------
+// 判题模板的查看 / 编辑（最后一道保障）
+// ---------------------------------------------------------------------------
+
+export interface HarnessViewResult extends HarnessView {}
+
+/** 查看当前会用的判题模板（用户覆盖 > AI 缓存 > 内置） */
+export function viewHarness(
+  problem: Problem,
+  language: Language,
+  sourceCode: string
+): HarnessView | null {
+  const base = buildHarness(problem, language, sourceCode)
+  const entry = getHarnessEntry(problem, language)
+  const origin: HarnessView['origin'] = entry ? (entry.source === 'user' ? 'user' : 'ai') : 'builtin'
+  const split = entry
+    ? splitHarness(language, assembleHarness(language, base, entry.code) || base)
+    : splitHarness(language, base)
+  if (!split) return null
+  return { file: split.file, driver: split.driver, head: split.head, origin, language }
+}
+
+/** 用给定模板跑一遍所有用例，返回结果（供编辑界面「验证并运行」用） */
+export async function verifyHarness(
+  problem: Problem,
+  language: Language,
+  sourceCode: string,
+  driver: string,
+  tests: TestCase[],
+  ctx: RunnerContext,
+  onTest?: (caseResult: CaseResult) => void
+): Promise<RunResult> {
+  const tc = ctx.toolchains[language]
+  if (!tc?.available) return { ok: false, cases: [], error: '工具链不可用' }
+  const base = buildHarness(problem, language, sourceCode)
+  const h = assembleHarness(language, base, driver)
+  if (!h) return { ok: false, cases: [], error: '模板无法拼接（缺少 main）' }
+  return runWithHarness(problem, language, sourceCode, tests, ctx, tc, h, onTest)
 }
 
 export { deepEqual, randId }

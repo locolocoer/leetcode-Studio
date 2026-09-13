@@ -2,7 +2,7 @@ import { contextBridge, ipcRenderer } from 'electron'
 import type {
   AiChatRequest, AiTestResult, AppInfo, AuthStatus, CatalogEntry, DebugSnapshot, DebugVar, FetchedProblemListEntry,
   Language, Problem, RunResult, Settings, SolutionDetail, SolutionListResult, SolutionOrderBy, SubmitVerdict,
-  TestCase, ToolchainStatus, UpdateStatus
+  TestCase, ToolchainStatus, UpdateStatus, HarnessView
 } from '../shared/types'
 
 const invoke = (channel: string, ...args: any[]) => ipcRenderer.invoke(channel, ...args)
@@ -43,6 +43,14 @@ const api = {
       invoke('solutions:list', questionSlug, opts),
     detail: (slug: string, questionSlug?: string): Promise<SolutionDetail> =>
       invoke('solutions:detail', slug, questionSlug)
+  },
+  harness: {
+    view: (p: Problem, lang: Language, src: string): Promise<HarnessView | null> => invoke('harness:view', p, lang, src),
+    verify: (p: Problem, lang: Language, src: string, driver: string, tests: TestCase[]): Promise<RunResult> =>
+      invoke('harness:verify', p, lang, src, driver, tests),
+    save: (p: Problem, lang: Language, src: string, driver: string, tests: TestCase[]): Promise<RunResult> =>
+      invoke('harness:save', p, lang, src, driver, tests),
+    reset: (p: Problem, lang: Language): Promise<boolean> => invoke('harness:reset', p, lang)
   },
   debug: {
     start: (p: Problem, lang: Language, src: string, test: TestCase, bps: number[]): Promise<DebugSnapshot> =>

@@ -4,7 +4,7 @@ import type {
   DebugVar,
   AiChatRequest, AiTestResult, AppInfo, AuthStatus, CatalogEntry, DebugSnapshot, FetchedProblemListEntry,
   Language, Problem, RunResult, Settings, SolutionDetail, SolutionListResult, SolutionOrderBy, SubmitVerdict,
-  ToolchainStatus, UpdateStatus
+  ToolchainStatus, UpdateStatus, HarnessView
 } from '../../shared/types'
 
 interface DshApiShape {
@@ -31,6 +31,12 @@ interface DshApiShape {
   solutions: {
     list(questionSlug: string, opts?: { first?: number; skip?: number; orderBy?: SolutionOrderBy }): Promise<SolutionListResult>
     detail(slug: string, questionSlug?: string): Promise<SolutionDetail>
+  }
+  harness: {
+    view(p: Problem, lang: Language, src: string): Promise<HarnessView | null>
+    verify(p: Problem, lang: Language, src: string, driver: string, tests: TestCase[]): Promise<RunResult>
+    save(p: Problem, lang: Language, src: string, driver: string, tests: TestCase[]): Promise<RunResult>
+    reset(p: Problem, lang: Language): Promise<boolean>
   }
   debug: {
     start(p: Problem, lang: Language, src: string, test: any, bps: number[]): Promise<DebugSnapshot>
