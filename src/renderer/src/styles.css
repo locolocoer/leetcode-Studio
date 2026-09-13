@@ -598,3 +598,16 @@ input::placeholder { color: var(--text-faint); }
 .hljs-meta, .hljs-tag { color: #8b949e; }
 .hljs-deletion { color: #ffa198; }
 .hljs-emphasis { font-style: italic; }
+
+/* 多语言代码块：tab 切换 */
+.md-code.md-tabs { padding: 0; overflow: hidden; }
+.md-tabbar { display: flex; align-items: stretch; gap: 0; overflow-x: auto; background: rgba(255,255,255,0.035); border-bottom: 1px solid var(--border); scrollbar-width: thin; }
+.md-tab { appearance: none; border: 0; background: transparent; color: var(--text-faint); font-family: var(--mono); font-size: 12.5px; font-weight: 500; padding: 9px 13px; cursor: pointer; white-space: nowrap; border-bottom: 2px solid transparent; transition: color .12s, border-color .12s; }
+.md-tab:hover { color: var(--text); }
+.md-tab.active { color: var(--text); border-bottom-color: var(--accent, #5b8cff); }
+.md-tabpanels { position: relative; }
+.md-tabpanel { display: none; position: relative; }
+.md-tabpanel.active { display: block; }
+.md-code.md-tabs pre.hljs { margin: 0; border-radius: 0; }
+.md-copy-float { position: absolute; top: 6px; right: 8px; opacity: .75; z-index: 2; }
+.md-copy-float:hover { opacity: 1; }

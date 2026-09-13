@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import type { Problem, SolutionDetail, SolutionItem, SolutionOrderBy } from '../../../shared/types'
+import type { Language, Problem, SolutionDetail, SolutionItem, SolutionOrderBy } from '../../../shared/types'
 import { renderMarkdown } from '../markdown'
 
 interface Props {
   problem: Problem
+  /** 当前刷题语言：多语言代码块默认选中对应的 tab */
+  language?: Language
   onClose: () => void
 }
 
@@ -49,7 +51,7 @@ function Avatar({ url, name, size = 40 }: { url?: string; name: string; size?: n
   )
 }
 
-export default function SolutionModal({ problem, onClose }: Props) {
+export default function SolutionModal({ problem, language, onClose }: Props) {
   const [orderBy, setOrderBy] = useState<SolutionOrderBy>('DEFAULT')
   const [items, setItems] = useState<SolutionItem[]>([])
   const [total, setTotal] = useState(0)
@@ -103,14 +105,29 @@ export default function SolutionModal({ problem, onClose }: Props) {
     return () => { cancelled = true }
   }, [activeSlug, problem.slug])
 
-  const html = useMemo(() => (detail ? renderMarkdown(detail.content) : ''), [detail])
+  const html = useMemo(
+    () => (detail ? renderMarkdown(detail.content, language) : ''),
+    [detail, language]
+  )
 
-  // 正文里的链接用系统浏览器打开；代码块「复制」按钮
+  // 正文里的链接用系统浏览器打开；代码块「复制」按钮；多语言代码的 tab 切换
   useEffect(() => {
     const el = bodyRef.current
     if (!el) return
     const onClick = (e: MouseEvent) => {
       const target = e.target as HTMLElement
+      const tab = target.closest('.md-tab') as HTMLElement | null
+      if (tab) {
+        const group = tab.closest('.md-tabs')
+        const idx = tab.getAttribute('data-tab')
+        if (group && idx != null) {
+          group.querySelectorAll('.md-tab').forEach((t) => t.classList.toggle('active', t === tab))
+          group.querySelectorAll('.md-tabpanel').forEach((p) => {
+            p.classList.toggle('active', p.getAttribute('data-panel') === idx)
+          })
+        }
+        return
+      }
       const btn = target.closest('.md-copy') as HTMLElement | null
       if (btn) {
         const code = btn.getAttribute('data-copy') || ''

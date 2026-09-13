@@ -706,7 +706,7 @@ export default function App() {
       )}
 
       {solutionOpen && active && (
-        <SolutionModal problem={active} onClose={() => setSolutionOpen(false)} />
+        <SolutionModal problem={active} language={language} onClose={() => setSolutionOpen(false)} />
       )}
 
       {harnessOpen && active && (

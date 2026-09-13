@@ -60,6 +60,74 @@ function highlightCode(code: string, rawLang: string): { html: string; langClass
   return { html: escapeHtml(code), langClass: 'plaintext' }
 }
 
+/** 语言的显示名（tab 与代码块标题都用它） */
+const LANG_LABEL: Record<string, string> = {
+  cpp: 'C++', c: 'C', java: 'Java', python: 'Python3', javascript: 'JavaScript',
+  typescript: 'TypeScript', go: 'Go', rust: 'Rust', csharp: 'C#', kotlin: 'Kotlin',
+  swift: 'Swift', ruby: 'Ruby', php: 'PHP', sql: 'SQL', bash: 'Bash', plaintext: '代码'
+}
+
+function normLang(rawLang: string): string {
+  const key = (rawLang || '').trim().toLowerCase()
+  return LANG_ALIAS[key] || key
+}
+
+/**
+ * tab 标签：优先「语言名 + 备注里的额外信息」。
+ * 备注形如 sol1-Java / sol2-C++ / Python3 写法二：去掉 solN- 前缀后，
+ * 剩下的如果又只是语言名就丢掉，否则作为后缀（如「Java 写法二」）。
+ */
+function codeLabel(rawLang: string, note: string): string {
+  const name = normLang(rawLang)
+  const base = LANG_LABEL[name] || (rawLang ? rawLang.trim() : '代码')
+  if (!note) return base
+  const cleaned = note.replace(/^sol[-\d]*/i, '').trim()
+  if (!cleaned) return base
+  const asLang = normLang(cleaned.replace(/\s.*$/, ''))
+  if (asLang === name || LANG_LABEL[asLang] === base) return base
+  if (/^(java|c\+\+|cpp|python\d?|py\d?|c|go|rust|javascript|js|typescript|ts|c#|cs|kotlin|swift|ruby|php|sql|bash|sh)$/i.test(cleaned)) return base
+  return `${base} ${cleaned}`
+}
+
+/** 把同一段代码的多语言版本渲染成一个带 tab 的卡片 */
+function renderCodeTabs(
+  blocks: { lang: string; note: string; code: string; key: string }[],
+  preferredLang?: string
+): string {
+  const labels = blocks.map((b) => codeLabel(b.lang, b.note))
+  // 同语言多个版本时补序号，避免两个「Java」分不清
+  const seen = new Map<string, number>()
+  const finalLabels = labels.map((l) => {
+    const n = (seen.get(l) || 0) + 1
+    seen.set(l, n)
+    return n > 1 ? `${l} ${n}` : l
+  })
+
+  const want = preferredLang ? normLang(preferredLang) : ''
+  let active = blocks.findIndex((b) => normLang(b.lang) === want)
+  if (active < 0) active = 0
+
+  const tabs = blocks
+    .map((b, idx) =>
+      `<button class="md-tab${idx === active ? ' active' : ''}" data-tab="${idx}" ` +
+      `title="${escapeHtml(finalLabels[idx])}">${escapeHtml(finalLabels[idx])}</button>`
+    )
+    .join('')
+
+  const panels = blocks
+    .map((b, idx) => {
+      const hl = highlightCode(b.code, b.lang)
+      return (
+        `<div class="md-tabpanel${idx === active ? ' active' : ''}" data-panel="${idx}">` +
+        `<button class="md-copy md-copy-float" data-key="${b.key}" data-copy="${escapeHtml(b.code)}">复制</button>` +
+        `<pre class="hljs"><code class="hljs language-${hl.langClass}">${hl.html}</code></pre></div>`
+      )
+    })
+    .join('')
+
+  return `<div class="md-code md-tabs"><div class="md-tabbar" role="tablist">${tabs}</div><div class="md-tabpanels">${panels}</div></div>`
+}
+
 export function escapeHtml(s: string): string {
   return s
     .replace(/&/g, '&amp;')
@@ -144,8 +212,10 @@ function inline(src: string): string {
   return s
 }
 
-/** Markdown → HTML（仅用于展示，已做 HTML 转义） */
-export function renderMarkdown(md: string): string {
+/** Markdown → HTML（仅用于展示，已做 HTML 转义）
+ *  preferredLang：题解里同一段代码给了多种语言时，优先选中与当前刷题语言一致的那个 tab
+ */
+export function renderMarkdown(md: string, preferredLang?: string): string {
   const lines = md.replace(/\r\n?/g, '\n').split('\n')
   const out: string[] = []
   let i = 0
@@ -166,26 +236,41 @@ export function renderMarkdown(md: string): string {
     const fence = /^\s*```+\s*(.*)$/.exec(line)
     if (fence) {
       flushPara()
-      const info = fence[1].trim()
-      // 形如 "Java [sol1-Java]" / "py [sol-Python3]"：语言名 + 可选标注
-      const lang = (info.split(/[\s[]/)[0] || '').toLowerCase()
-      const note = /\[([^\]]+)\]/.exec(info)?.[1] || ''
-      const body: string[] = []
-      i++
-      while (i < lines.length && !/^\s*```+\s*$/.test(lines[i])) {
-        body.push(lines[i])
+      // 连续（中间只有空行）的多个代码块 = 同一段代码的多语言版本 → 合并成 tab
+      const blocks: { lang: string; note: string; code: string; key: string }[] = []
+      while (i < lines.length) {
+        const f = /^\s*```+\s*(.*)$/.exec(lines[i])
+        if (!f) break
+        const info = f[1].trim()
+        // 形如 "Java [sol1-Java]" / "py [sol-Python3]"：语言名 + 可选标注
+        const lang = (info.split(/[\s[]/)[0] || '').toLowerCase()
+        const note = /\[([^\]]+)\]/.exec(info)?.[1] || ''
+        const body: string[] = []
         i++
+        while (i < lines.length && !/^\s*```+\s*$/.test(lines[i])) {
+          body.push(lines[i])
+          i++
+        }
+        i++ // 跳过结束围栏
+        blocks.push({ lang, note, code: body.join('\n'), key: 'code' + codeIdx++ })
+        // 跳过空行后如果还是围栏，就继续并入同一组
+        let j = i
+        while (j < lines.length && lines[j].trim() === '') j++
+        if (j < lines.length && /^\s*```+\s*\S/.test(lines[j])) { i = j; continue }
+        break
       }
-      i++ // 跳过结束围栏
-      const label = note || lang
-      const key = 'code' + codeIdx++
-      const codeText = body.join('\n')
-      const hl = highlightCode(codeText, lang)
-      out.push(
-        `<div class="md-code"><div class="md-code-head"><span>${escapeHtml(label)}</span>` +
-        `<button class="md-copy" data-key="${key}" data-copy="${escapeHtml(codeText)}">复制</button></div>` +
-        `<pre class="hljs"><code class="hljs language-${hl.langClass}">${hl.html}</code></pre></div>`
-      )
+
+      if (blocks.length === 1) {
+        const b = blocks[0]
+        const hl = highlightCode(b.code, b.lang)
+        out.push(
+          `<div class="md-code"><div class="md-code-head"><span>${escapeHtml(codeLabel(b.lang, b.note))}</span>` +
+          `<button class="md-copy" data-key="${b.key}" data-copy="${escapeHtml(b.code)}">复制</button></div>` +
+          `<pre class="hljs"><code class="hljs language-${hl.langClass}">${hl.html}</code></pre></div>`
+        )
+      } else {
+        out.push(renderCodeTabs(blocks, preferredLang))
+      }
       continue
     }
 
