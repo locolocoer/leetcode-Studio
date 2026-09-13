@@ -1,6 +1,6 @@
 {
   "name": "leetcode-studio",
-  "version": "1.1.9",
+  "version": "1.1.10",
   "description": "本地 LeetCode 刷题与多语言调试桌面应用",
   "main": "out/main/index.js",
   "author": "LeetCode Studio",
@@ -26,6 +26,7 @@
   "dependencies": {
     "@monaco-editor/react": "^4.6.0",
     "electron-updater": "^6.8.9",
+    "highlight.js": "^11.10.0",
     "monaco-editor": "^0.50.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1"

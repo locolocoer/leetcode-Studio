@@ -265,6 +265,11 @@ export interface SolutionItem {
   slug: string
   title: string
   author: string
+  /** 昵称（力扣的 realName，可能没有） */
+  authorName?: string
+  /** 头像地址 */
+  authorAvatar?: string
+  authorSlug?: string
   upvoteCount: number
   createdAt?: string
   summary?: string
@@ -281,6 +286,9 @@ export interface SolutionDetail {
   slug: string
   title: string
   author: string
+  authorName?: string
+  authorAvatar?: string
+  authorSlug?: string
   upvoteCount: number
   createdAt?: string
   content: string // Markdown

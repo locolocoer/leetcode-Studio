@@ -16,6 +16,39 @@ function fmtDate(iso?: string): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 }
 
+/** 头像：图挂了就用昵称首字生成一个彩色圆（离线也能看） */
+function Avatar({ url, name, size = 40 }: { url?: string; name: string; size?: number }) {
+  const [broken, setBroken] = useState(false)
+  const text = (name || '?').trim().slice(0, 1).toUpperCase()
+  const hue = useMemo(() => {
+    let h = 0
+    for (const ch of name || '?') h = (h * 31 + ch.charCodeAt(0)) % 360
+    return h
+  }, [name])
+  if (!url || broken) {
+    return (
+      <span
+        className="sol-avatar sol-avatar-fallback"
+        style={{ width: size, height: size, fontSize: size * 0.42, background: `hsl(${hue} 55% 42%)` }}
+      >
+        {text}
+      </span>
+    )
+  }
+  return (
+    <img
+      className="sol-avatar"
+      src={url}
+      alt={name}
+      width={size}
+      height={size}
+      referrerPolicy="no-referrer"
+      loading="lazy"
+      onError={() => setBroken(true)}
+    />
+  )
+}
+
 export default function SolutionModal({ problem, onClose }: Props) {
   const [orderBy, setOrderBy] = useState<SolutionOrderBy>('DEFAULT')
   const [items, setItems] = useState<SolutionItem[]>([])
@@ -142,8 +175,9 @@ export default function SolutionModal({ problem, onClose }: Props) {
                     onClick={() => setActiveSlug(s.slug)}>
                     <div className="sol-item-title">{s.title}</div>
                     <div className="sol-item-meta">
+                      <Avatar url={s.authorAvatar} name={s.authorName || s.author} size={18} />
+                      <span className="sol-author">{s.authorName || s.author}</span>
                       <span>👍 {s.upvoteCount}</span>
-                      <span>{s.author}</span>
                       {s.createdAt && <span>{fmtDate(s.createdAt)}</span>}
                     </div>
                     {s.summary && <div className="sol-item-sum">{s.summary}</div>}
@@ -168,13 +202,29 @@ export default function SolutionModal({ problem, onClose }: Props) {
                 <>
                   <div className="sol-detail-head">
                     <h3>{detail.title}</h3>
-                    <div className="sol-detail-meta">
-                      <span>👍 {detail.upvoteCount}</span>
-                      <span>@{detail.author}</span>
-                      {detail.createdAt && <span>{fmtDate(detail.createdAt)}</span>}
-                      <button className="link-btn" onClick={() => window.api.app.openExternal(detail.link)}>
-                        在浏览器中查看 →
-                      </button>
+                    <div className="sol-author-row">
+                      <Avatar url={detail.authorAvatar} name={detail.authorName || detail.author} size={38} />
+                      <div className="sol-author-info">
+                        <div className="sol-author-name">
+                          {detail.authorName || detail.author}
+                          {detail.authorSlug && (
+                            <button
+                              className="link-btn"
+                              style={{ marginLeft: 8, fontSize: 12 }}
+                              onClick={() => window.api.app.openExternal(`https://leetcode.cn/u/${detail.authorSlug}/`)}>
+                              主页 ↗
+                            </button>
+                          )}
+                        </div>
+                        <div className="sol-detail-meta">
+                          <span>@{detail.author}</span>
+                          <span>👍 {detail.upvoteCount}</span>
+                          {detail.createdAt && <span>{fmtDate(detail.createdAt)}</span>}
+                          <button className="link-btn" onClick={() => window.api.app.openExternal(detail.link)}>
+                            在浏览器中查看 →
+                          </button>
+                        </div>
+                      </div>
                     </div>
                   </div>
                   <div className="md-body" ref={bodyRef} dangerouslySetInnerHTML={{ __html: html }} />
@@ -190,7 +240,7 @@ export default function SolutionModal({ problem, onClose }: Props) {
 
         <div className="modal-foot">
           <span style={{ marginRight: 'auto', color: 'var(--text-faint)', fontSize: 12 }}>
-            {active ? `当前：${active.title} · @${active.author}` : ''}
+            {active ? `当前：${active.title} · ${active.authorName || active.author}` : ''}
           </span>
           <button className="btn" onClick={onClose}>关闭</button>
         </div>

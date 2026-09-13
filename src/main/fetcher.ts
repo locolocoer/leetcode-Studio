@@ -209,19 +209,46 @@ const SOLUTION_LIST_QUERY = `query questionSolutionArticles($questionSlug: Strin
     edges {
       node {
         slug title upvoteCount createdAt summary
-        author { username }
+        author { username profile { userAvatar realName userSlug } }
         tags { name }
       }
     }
   }
 }`
 
+const SOLUTION_LIST_QUERY_BASIC = `query questionSolutionArticles($questionSlug: String!, $first: Int, $skip: Int, $orderBy: SolutionArticleOrderBy) {
+  questionSolutionArticles(questionSlug: $questionSlug, first: $first, skip: $skip, orderBy: $orderBy) {
+    totalNum
+    edges { node { slug title upvoteCount createdAt summary author { username } tags { name } } }
+  }
+}`
+
 const SOLUTION_DETAIL_QUERY = `query solutionArticle($slug: String!) {
+  solutionArticle(slug: $slug) {
+    title content upvoteCount createdAt
+    author { username profile { userAvatar realName userSlug } }
+  }
+}`
+
+const SOLUTION_DETAIL_QUERY_BASIC = `query solutionArticle($slug: String!) {
   solutionArticle(slug: $slug) {
     title content upvoteCount createdAt
     author { username }
   }
 }`
+
+/** 头像/昵称字段（profile）在某些站点版本上可能不存在：失败后退回基础查询并记住 */
+let solutionAuthorProfileOk = true
+
+function authorOf(a: any): { author: string; authorName?: string; authorAvatar?: string; authorSlug?: string } {
+  const p = a?.profile || {}
+  return {
+    author: a?.username || '匿名',
+    authorName: p.realName || undefined,
+    authorAvatar: p.userAvatar || undefined,
+    authorSlug: p.userSlug || undefined
+  }
+}
 
 async function gqlPost(base: string, referer: string, body: unknown): Promise<any> {
   const res = await fetch(`${base}/graphql`, {
@@ -248,11 +275,28 @@ export async function fetchSolutionList(
   const base = hostBase(SOLUTION_HOST)
   const first = Math.min(Math.max(opts.first ?? 20, 1), 50)
   const skip = Math.max(opts.skip ?? 0, 0)
-  const data = await gqlPost(base, `${base}/problems/${questionSlug}/solutions/`, {
-    operationName: 'questionSolutionArticles',
-    variables: { questionSlug, first, skip, orderBy: opts.orderBy || 'DEFAULT' },
-    query: SOLUTION_LIST_QUERY
-  })
+  const vars = { questionSlug, first, skip, orderBy: opts.orderBy || 'DEFAULT' }
+  const referer = `${base}/problems/${questionSlug}/solutions/`
+  let data: any
+  try {
+    data = await gqlPost(base, referer, {
+      operationName: 'questionSolutionArticles',
+      variables: vars,
+      query: solutionAuthorProfileOk ? SOLUTION_LIST_QUERY : SOLUTION_LIST_QUERY_BASIC
+    })
+  } catch (e: any) {
+    // profile 字段不被支持时退回基础查询
+    if (solutionAuthorProfileOk && /profile|userAvatar|realName/i.test(String(e?.message || ''))) {
+      solutionAuthorProfileOk = false
+      data = await gqlPost(base, referer, {
+        operationName: 'questionSolutionArticles',
+        variables: vars,
+        query: SOLUTION_LIST_QUERY_BASIC
+      })
+    } else {
+      throw e
+    }
+  }
   const conn = data?.questionSolutionArticles
   if (!conn) throw new Error(`未找到题目「${questionSlug}」的题解`)
   const items: SolutionItem[] = (conn.edges || [])
@@ -261,7 +305,7 @@ export async function fetchSolutionList(
     .map((n: any) => ({
       slug: n.slug,
       title: n.title || '(无标题)',
-      author: n.author?.username || '匿名',
+      ...authorOf(n.author),
       upvoteCount: n.upvoteCount || 0,
       createdAt: n.createdAt || undefined,
       summary: (n.summary || '').replace(/\s+/g, ' ').trim().slice(0, 140) || undefined,
@@ -272,17 +316,32 @@ export async function fetchSolutionList(
 
 export async function fetchSolutionDetail(slug: string, questionSlug?: string): Promise<SolutionDetail> {
   const base = hostBase(SOLUTION_HOST)
-  const data = await gqlPost(base, `${base}/problems/${questionSlug || ''}/solutions/`, {
-    operationName: 'solutionArticle',
-    variables: { slug },
-    query: SOLUTION_DETAIL_QUERY
-  })
+  const referer = `${base}/problems/${questionSlug || ''}/solutions/`
+  let data: any
+  try {
+    data = await gqlPost(base, referer, {
+      operationName: 'solutionArticle',
+      variables: { slug },
+      query: solutionAuthorProfileOk ? SOLUTION_DETAIL_QUERY : SOLUTION_DETAIL_QUERY_BASIC
+    })
+  } catch (e: any) {
+    if (solutionAuthorProfileOk && /profile|userAvatar|realName/i.test(String(e?.message || ''))) {
+      solutionAuthorProfileOk = false
+      data = await gqlPost(base, referer, {
+        operationName: 'solutionArticle',
+        variables: { slug },
+        query: SOLUTION_DETAIL_QUERY_BASIC
+      })
+    } else {
+      throw e
+    }
+  }
   const a = data?.solutionArticle
   if (!a) throw new Error('题解内容为空（可能已被删除或需要登录）')
   return {
     slug,
     title: a.title || '(无标题)',
-    author: a.author?.username || '匿名',
+    ...authorOf(a.author),
     upvoteCount: a.upvoteCount || 0,
     createdAt: a.createdAt || undefined,
     content: a.content || '',

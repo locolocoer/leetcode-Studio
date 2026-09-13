@@ -577,3 +577,24 @@ input::placeholder { color: var(--text-faint); }
 .harness-actions { padding: 10px 18px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .harness-modal .result-row { margin: 0 18px 8px; }
 .harness-modal .debug-output { margin: 0 18px 8px; }
+
+/* 题解作者头像/昵称 */
+.sol-avatar { border-radius: 50%; object-fit: cover; flex: none; display: inline-block; }
+.sol-avatar-fallback { display: inline-flex; align-items: center; justify-content: center; color: #fff; font-weight: 600; }
+.sol-author-row { display: flex; align-items: center; gap: 10px; margin-top: 8px; }
+.sol-author-info { min-width: 0; }
+.sol-author-name { font-size: 13.5px; font-weight: 600; color: var(--text); display: flex; align-items: center; }
+.sol-item-meta { display: flex; align-items: center; gap: 6px; }
+.sol-item-meta .sol-author { color: var(--text-dim); }
+/* 代码高亮（highlight.js 主题，配合深色背景） */
+.md-code pre.hljs { background: #12161d; color: #d7dce5; }
+.hljs { color: #d7dce5; background: transparent; }
+.hljs-comment, .hljs-quote { color: #6b7684; font-style: italic; }
+.hljs-keyword, .hljs-selector-tag, .hljs-literal, .hljs-section, .hljs-doctag, .hljs-type, .hljs-name, .hljs-strong { color: #ff7b72; }
+.hljs-string, .hljs-regexp, .hljs-addition, .hljs-attribute, .hljs-meta .hljs-string { color: #a5d6ff; }
+.hljs-number, .hljs-symbol, .hljs-bullet, .hljs-variable, .hljs-template-variable, .hljs-link, .hljs-selector-attr, .hljs-selector-pseudo { color: #79c0ff; }
+.hljs-title, .hljs-title.class_, .hljs-title.function_, .hljs-built_in { color: #d2a8ff; }
+.hljs-attr, .hljs-property, .hljs-params { color: #ffa657; }
+.hljs-meta, .hljs-tag { color: #8b949e; }
+.hljs-deletion { color: #ffa198; }
+.hljs-emphasis { font-style: italic; }

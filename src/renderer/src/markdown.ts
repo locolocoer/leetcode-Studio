@@ -1,6 +1,65 @@
 // 轻量 Markdown 渲染：只覆盖 LeetCode 题解实际用到的语法。
 // 内容来自网络，必须先转义 HTML 再做标记替换，避免注入。
 
+import hljs from 'highlight.js/lib/core'
+import cpp from 'highlight.js/lib/languages/cpp'
+import c from 'highlight.js/lib/languages/c'
+import java from 'highlight.js/lib/languages/java'
+import python from 'highlight.js/lib/languages/python'
+import javascript from 'highlight.js/lib/languages/javascript'
+import typescript from 'highlight.js/lib/languages/typescript'
+import go from 'highlight.js/lib/languages/go'
+import rust from 'highlight.js/lib/languages/rust'
+import csharp from 'highlight.js/lib/languages/csharp'
+import kotlin from 'highlight.js/lib/languages/kotlin'
+import swift from 'highlight.js/lib/languages/swift'
+import ruby from 'highlight.js/lib/languages/ruby'
+import php from 'highlight.js/lib/languages/php'
+import sql from 'highlight.js/lib/languages/sql'
+import bash from 'highlight.js/lib/languages/bash'
+import plaintext from 'highlight.js/lib/languages/plaintext'
+
+for (const [name, lang] of Object.entries({
+  cpp, c, java, python, javascript, typescript, go, rust, csharp, kotlin, swift, ruby, php, sql, bash, plaintext
+})) {
+  hljs.registerLanguage(name, lang as any)
+}
+
+/** 题解里常见的语言别名 → highlight.js 的语言名 */
+const LANG_ALIAS: Record<string, string> = {
+  'c++': 'cpp', cplusplus: 'cpp', cpp11: 'cpp', 'cpp17': 'cpp',
+  c: 'c', java: 'java', 'java8': 'java', py: 'python', python3: 'python', python: 'python',
+  js: 'javascript', javascript: 'javascript', node: 'javascript',
+  ts: 'typescript', typescript: 'typescript',
+  go: 'go', golang: 'go', rs: 'rust', rust: 'rust',
+  cs: 'csharp', 'c#': 'csharp', kt: 'kotlin', kotlin: 'kotlin', swift: 'swift',
+  rb: 'ruby', ruby: 'ruby', php: 'php', sql: 'sql', mysql: 'sql',
+  sh: 'bash', shell: 'bash', bash: 'bash', zsh: 'bash',
+  text: 'plaintext', plaintext: 'plaintext', txt: 'plaintext'
+}
+
+/** 高亮一段代码；语言未知时用一小撮常见语言自动推断，失败就原样转义 */
+function highlightCode(code: string, rawLang: string): { html: string; langClass: string } {
+  const key = (rawLang || '').trim().toLowerCase()
+  const name = LANG_ALIAS[key] || key
+  if (name && hljs.getLanguage(name)) {
+    try {
+      return { html: hljs.highlight(code, { language: name, ignoreIllegals: true }).value, langClass: name }
+    } catch {
+      /* 落到自动推断 */
+    }
+  }
+  if (!name) {
+    try {
+      const auto = hljs.highlightAuto(code, ['cpp', 'java', 'python', 'c', 'javascript', 'go', 'sql', 'bash'])
+      return { html: auto.value, langClass: auto.language || 'plaintext' }
+    } catch {
+      /* 落到纯文本 */
+    }
+  }
+  return { html: escapeHtml(code), langClass: 'plaintext' }
+}
+
 export function escapeHtml(s: string): string {
   return s
     .replace(/&/g, '&amp;')
@@ -120,10 +179,12 @@ export function renderMarkdown(md: string): string {
       i++ // 跳过结束围栏
       const label = note || lang
       const key = 'code' + codeIdx++
+      const codeText = body.join('\n')
+      const hl = highlightCode(codeText, lang)
       out.push(
         `<div class="md-code"><div class="md-code-head"><span>${escapeHtml(label)}</span>` +
-        `<button class="md-copy" data-key="${key}" data-copy="${escapeHtml(body.join('\n'))}">复制</button></div>` +
-        `<pre><code>${escapeHtml(body.join('\n'))}</code></pre></div>`
+        `<button class="md-copy" data-key="${key}" data-copy="${escapeHtml(codeText)}">复制</button></div>` +
+        `<pre class="hljs"><code class="hljs language-${hl.langClass}">${hl.html}</code></pre></div>`
       )
       continue
     }
