@@ -182,34 +182,43 @@ export default function Sidebar({
           )
         })}
       </div>
-      <div className="cat-now">
-        <span className="dot" />
-        当前分类：<b>{catLabel(String(cat))}</b>
-        {(() => {
-          const pg = progressOf(String(cat))
-          return (
-            <span className="cat-progress" title="已提交通过 / 该分类题目数">
-              {pg.solved > 0 ? `✓ ${pg.solved} / ${pg.total}` : `${pg.total} 题`}
-            </span>
-          )
-        })()}
-        <span style={{ marginLeft: 'auto', display: 'flex', gap: 6 }}>
-          {(() => {
-            const col = collections.find((c) => c.id === String(cat))
-            if (!col) {
-              return problems.some((p) => p.solvedAt || p.localPassAt) ? (
-                <button className="link-btn" title="清除全部题目的刷题记录" onClick={onClearAllRecords}>清除记录</button>
-              ) : null
-            }
-            return (
-              <>
-                <button className="link-btn" title={`清除「${col.title}」的刷题记录，重新开始刷`}
-                  onClick={() => onClearRecords(col)}>清除本单记录</button>
-              </>
-            )
-          })()}
-        </span>
-      </div>
+      {(() => {
+        const pg = progressOf(String(cat))
+        const col = collections.find((c) => c.id === String(cat))
+        const hasRecords = problems.some((p) => p.solvedAt || p.localPassAt)
+        const pct = pg.total ? Math.round((pg.solved / pg.total) * 100) : 0
+        return (
+          <div className="cat-now">
+            <div className="cat-now-top">
+              <span className="dot" />
+              <span className="cat-now-text" title={`当前分类：${catLabel(String(cat))}`}>
+                当前分类：<b>{catLabel(String(cat))}</b>
+              </span>
+            </div>
+            <div className="cat-now-bottom">
+              {pg.solved > 0 ? (
+                <>
+                  <span className="cat-bar" title={`已通过 ${pg.solved} / ${pg.total} 题`}>
+                    <i style={{ width: `${pct}%` }} />
+                  </span>
+                  <span className="cat-now-progress">✓ {pg.solved}/{pg.total}</span>
+                </>
+              ) : (
+                <span className="cat-now-progress">{pg.total} 题</span>
+              )}
+              {(col || hasRecords) && (
+                <button className="cat-clear"
+                  title={col
+                    ? `清除「${col.title}」的刷题记录，重新开始刷（代码与用例保留）`
+                    : '清除全部题目的刷题记录（代码与用例保留）'}
+                  onClick={() => (col ? onClearRecords(col) : onClearAllRecords())}>
+                  清除记录
+                </button>
+              )}
+            </div>
+          </div>
+        )
+      })()}
 
       <div className="problem-list">
         {busy && <div className="loader" style={{ padding: '14px' }}>加载中…</div>}
@@ -235,11 +244,14 @@ export default function Sidebar({
               {it.titleCn && it.titleCn !== it.title && <small>{it.titleCn}</small>}
               {!it.loaded && <small style={{ color: 'var(--text-faint)' }}>未缓存 · 点击加载</small>}
             </span>
+            {/* 始终占一列，保证难度标签位置稳定 */}
             {it.solved ? (
               <span className="solved-mark" title={`提交通过${it.solvedLang ? `（${it.solvedLang}）` : ''}`}>✓</span>
             ) : it.localPass ? (
               <span className="local-mark" title="本地用例已全过（还没提交通过）">·</span>
-            ) : null}
+            ) : (
+              <span className="solved-mark empty" />
+            )}
             <span className={diffClass[it.difficulty]}>{diffText[it.difficulty]}</span>
           </div>
         ))}
