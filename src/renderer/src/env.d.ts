@@ -14,6 +14,7 @@ interface DshApiShape {
     remove(id: string): Promise<Problem[]>
     ensure(slug: string, host?: string): Promise<Problem>
     refetch(slug: string): Promise<Problem>
+    clearRecords(slugs?: string[]): Promise<Problem[]>
   }
   catalog: {
     get(): Promise<CatalogEntry[]>

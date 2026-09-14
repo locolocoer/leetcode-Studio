@@ -36,10 +36,36 @@ export class Store {
   upsertProblem(problem: Problem): Problem[] {
     const problems = this.loadProblems()
     const idx = problems.findIndex((p) => p.id === problem.id)
-    if (idx >= 0) problems[idx] = problem
-    else problems.push(problem)
+    if (idx >= 0) {
+      const prev = problems[idx]
+      // 刷题记录只增不减：普通写入（改代码、改用例）没带记录时保留原有的，
+      // 要清记录请走 clearRecords()。
+      problems[idx] = {
+        ...problem,
+        solvedAt: problem.solvedAt ?? prev.solvedAt,
+        solvedLang: problem.solvedLang ?? prev.solvedLang,
+        localPassAt: problem.localPassAt ?? prev.localPassAt
+      }
+    } else {
+      problems.push(problem)
+    }
     this.saveProblems(problems)
     return problems
+  }
+
+  /** 清除刷题记录（按 slug），返回更新后的列表 */
+  clearRecords(slugs?: string[]): Problem[] {
+    const problems = this.loadProblems()
+    const set = slugs && slugs.length ? new Set(slugs) : null
+    let n = 0
+    const next = problems.map((p) => {
+      if (set && !set.has(p.slug)) return p
+      if (!p.solvedAt && !p.localPassAt) return p
+      n++
+      return { ...p, solvedAt: undefined, solvedLang: undefined, localPassAt: undefined }
+    })
+    if (n) this.saveProblems(next)
+    return next
   }
 
   removeProblem(id: string): Problem[] {

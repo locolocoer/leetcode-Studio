@@ -611,3 +611,10 @@ input::placeholder { color: var(--text-faint); }
 .md-code.md-tabs pre.hljs { margin: 0; border-radius: 0; }
 .md-copy-float { position: absolute; top: 6px; right: 8px; opacity: .75; z-index: 2; }
 .md-copy-float:hover { opacity: 1; }
+
+/* 刷题记录标记 */
+.solved-mark { color: var(--green); font-weight: 700; font-size: 13px; flex: none; }
+.local-mark { color: var(--text-faint); font-weight: 700; flex: none; }
+.problem-item.solved .problem-title { color: var(--text-dim); }
+.cat-solved { margin-left: 4px; color: var(--green); font-weight: 600; }
+.cat-progress { margin-left: 8px; color: var(--text-faint); }

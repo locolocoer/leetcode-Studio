@@ -13,7 +13,8 @@ const api = {
     update: (p: Problem): Promise<Problem[]> => invoke('problems:update', p),
     remove: (id: string): Promise<Problem[]> => invoke('problems:remove', id),
     ensure: (slug: string, host?: string): Promise<Problem> => invoke('problems:ensure', slug, host),
-    refetch: (slug: string): Promise<Problem> => invoke('problems:refetch', slug)
+    refetch: (slug: string): Promise<Problem> => invoke('problems:refetch', slug),
+    clearRecords: (slugs?: string[]): Promise<Problem[]> => invoke('problems:clearRecords', slugs)
   },
   catalog: {
     get: (): Promise<CatalogEntry[]> => invoke('catalog:get'),

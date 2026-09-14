@@ -87,6 +87,8 @@ export default function App() {
   const loadAll = useCallback(async (s?: Settings) => {
     const sett = s || await window.api.settings.get()
     setSettings(sett)
+    // 刷题语言：默认沿用上次用的，不用每次点
+    if (sett.lastLanguage) setLanguage(sett.lastLanguage)
     const [probs, tcs, cols] = await Promise.all([
       window.api.problems.list(), window.api.toolchains.detect(sett), window.api.catalog.get()
     ])
@@ -199,6 +201,10 @@ export default function App() {
     try {
       const r = await window.api.run.tests(active, language, activeCode, tests)
       setResult(r)
+      // 本地全过也记一笔（不显示 √，只作为「做过」的提示）
+      if (r.ok && r.cases.length && r.cases.every((c) => c.passed) && !active.solvedAt) {
+        markSolved(active.id, { localPassAt: new Date().toISOString() })
+      }
     } catch (e: any) {
       setResult({ ok: false, cases: [], error: String(e?.message || e) })
     } finally {
@@ -228,11 +234,53 @@ export default function App() {
     try {
       const v = await window.api.lc.submit(lcStatus.host, active.slug, active.id, language, activeCode)
       setVerdict(v)
+      // 提交通过 → 记一笔刷题记录（√），并记下是用哪种语言过的
+      if (v.accepted) {
+        markSolved(active.id, { solvedAt: new Date().toISOString(), solvedLang: language })
+      }
     } catch (e: any) {
       setVerdict({ ok: false, accepted: false, status: '提交失败', error: String(e?.message || e) })
     } finally {
       setSubmitting(false)
     }
+  }
+
+  /** 写入刷题记录（只改当前题，避免整体覆盖） */
+  const markSolved = (problemId: string, patch: Partial<Problem>) => {
+    const target = problems.find((p) => p.id === problemId)
+    if (!target) return
+    const next: Problem = { ...target, ...patch }
+    setProblems((prev) => prev.map((p) => (p.id === problemId ? next : p)))
+    window.api.problems.update(next).catch(() => {})
+  }
+
+  /** 切换刷题语言：记住这次选择，下次打开直接用它 */
+  const changeLanguage = (lang: Language) => {
+    setLanguage(lang)
+    const ns: Settings = { ...settings, lastLanguage: lang }
+    setSettings(ns)
+    window.api.settings.save(ns).catch(() => {})
+  }
+
+  /** 清空某个题单/分类的刷题记录（这些题回到未做） */
+  const clearRecords = async (entry: CatalogEntry) => {
+    const slugs = entry.items.map((i) => i.slug)
+    const affected = problems.filter((p) => slugs.includes(p.slug) && (p.solvedAt || p.localPassAt))
+    if (!affected.length) { setNotice(`「${entry.title}」还没有刷题记录`); return }
+    if (!confirm(`清除「${entry.title}」的刷题记录？\n共 ${affected.length} 道题的 √ 会被清掉（代码和用例保留），方便重新刷。`)) return
+    const list = await window.api.problems.clearRecords(slugs)
+    setProblems(list)
+    setNotice(`已清除「${entry.title}」的刷题记录（${affected.length} 道题）`)
+  }
+
+  /** 清空全部刷题记录 */
+  const clearAllRecords = async () => {
+    const affected = problems.filter((p) => p.solvedAt || p.localPassAt)
+    if (!affected.length) { setNotice('还没有刷题记录'); return }
+    if (!confirm(`清除全部刷题记录？共 ${affected.length} 道题的 √ 会被清掉（代码和用例保留）。`)) return
+    const list = await window.api.problems.clearRecords()
+    setProblems(list)
+    setNotice(`已清除全部刷题记录（${affected.length} 道题）`)
   }
 
   const saveProblem = (p: Problem) => {
@@ -448,6 +496,8 @@ export default function App() {
         onRemoveProblem={removeProblem}
         onRemoveCollection={removeCollection}
         onOpenFetch={() => setFetchOpen(true)}
+        onClearRecords={clearRecords}
+        onClearAllRecords={clearAllRecords}
       />
 
       <div className="main">
@@ -473,7 +523,7 @@ export default function App() {
                     className={`lang-btn ${language === l ? 'active' : ''}`}
                     disabled={!tc?.available}
                     title={`${label}：${tc?.available ? (tc.version || '工具链可用') : '未找到工具链（去设置里指定路径）'}`}
-                    onClick={() => setLanguage(l)}>
+                    onClick={() => changeLanguage(l)}>
                     <span className={`tc-dot ${tc?.available ? '' : 'off'}`} />
                     {label}
                   </button>

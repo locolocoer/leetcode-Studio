@@ -11,6 +11,11 @@ interface Item {
   titleCn?: string
   difficulty: Difficulty
   loaded: boolean
+  /** 提交通过（√） */
+  solved?: boolean
+  /** 本地全过但还没提交通过 */
+  localPass?: boolean
+  solvedLang?: string
 }
 
 interface Props {
@@ -29,6 +34,10 @@ interface Props {
   onRemoveProblem: (id: string) => void
   onRemoveCollection: (id: string) => void
   onOpenFetch: () => void
+  /** 清除某个题单/分类的刷题记录 */
+  onClearRecords: (entry: CatalogEntry) => void
+  /** 清除全部刷题记录 */
+  onClearAllRecords: () => void
 }
 
 const diffClass: Record<Difficulty, string> = {
@@ -41,7 +50,7 @@ const diffText: Record<Difficulty, string> = { easy: '简单', medium: '中等',
 export default function Sidebar({
   problems, collections, activeId, busy, category: cat, onCategoryChange: setCat,
   onSelectSlug, onAddDaily, onAddList, onAddLocal, onImport, onOpenSettings,
-  onRemoveProblem, onRemoveCollection, onOpenFetch
+  onRemoveProblem, onRemoveCollection, onOpenFetch, onClearRecords, onClearAllRecords
 }: Props) {
   const [q, setQ] = useState('')
 
@@ -62,16 +71,17 @@ export default function Sidebar({
       return !t || s.toLowerCase().includes(t)
     }
     let out: Item[] = []
+    const rec = (p: Problem) => ({ solved: !!p.solvedAt, localPass: !p.solvedAt && !!p.localPassAt, solvedLang: p.solvedLang })
     if (cat === 'all') {
       for (const p of problems) {
         if (!matchQ(p.title + ' ' + p.slug)) continue
-        out.push({ slug: p.slug, host: undefined, key: p.id, title: p.title, titleCn: p.titleCn, difficulty: p.difficulty, loaded: true })
+        out.push({ slug: p.slug, host: undefined, key: p.id, title: p.title, titleCn: p.titleCn, difficulty: p.difficulty, loaded: true, ...rec(p) })
       }
     } else if (cat === 'local') {
       for (const p of problems) {
         if (p.source === 'leetcode') continue
         if (!matchQ(p.title + ' ' + p.slug)) continue
-        out.push({ slug: p.slug, host: undefined, key: p.id, title: p.title, difficulty: p.difficulty, loaded: true })
+        out.push({ slug: p.slug, host: undefined, key: p.id, title: p.title, difficulty: p.difficulty, loaded: true, ...rec(p) })
       }
     } else {
       const col = collections.find((c) => c.id === cat)
@@ -86,13 +96,33 @@ export default function Sidebar({
             title: stored?.title ?? it.titleCn ?? it.title,
             titleCn: it.titleCn,
             difficulty: stored?.difficulty ?? it.difficulty,
-            loaded: !!stored
+            loaded: !!stored,
+            ...(stored ? rec(stored) : {})
           })
         }
       }
     }
     return out
   }, [cat, problems, collections, q, bySlug])
+
+  // 各分类的完成情况（只统计已缓存的题，题单里没拉下来的不算）
+  const progressOf = (key: string): { solved: number; total: number } => {
+    if (key === 'all') {
+      return { solved: problems.filter((p) => p.solvedAt).length, total: problems.length }
+    }
+    if (key === 'local') {
+      const local = problems.filter((p) => p.source !== 'leetcode')
+      return { solved: local.filter((p) => p.solvedAt).length, total: local.length }
+    }
+    const col = collections.find((c) => c.id === key)
+    if (!col) return { solved: 0, total: 0 }
+    let solved = 0
+    for (const it of col.items) {
+      const p = bySlug.get(it.slug)
+      if (p?.solvedAt) solved++
+    }
+    return { solved, total: col.items.length }
+  }
 
   const cats: { key: CategoryKey; label: string; count: number; isDaily?: boolean; removable?: boolean }[] = [
     { key: 'all', label: '全部题目', count: problems.length },
@@ -132,24 +162,53 @@ export default function Sidebar({
 
       <div className="cat-head">分类（{cats.length}）</div>
       <div className="cat-row">
-        {cats.map((c) => (
-          <span key={c.key}
-            className={`cat-chip ${cat === c.key ? 'active' : ''} ${c.isDaily ? 'daily' : ''}`}
-            onClick={() => setCat(c.key)}
-            title={c.label}>
-            <span className="cat-label">{c.label}</span>
-            <span className="cnt">{c.count}</span>
-            {c.removable && (
-              <span className="x" title="删除该分类"
-                onClick={(e) => { e.stopPropagation(); if (confirm(`删除分类「${c.label}」？题目不会删除。`)) onRemoveCollection(c.key) }}>✕</span>
-            )}
-          </span>
-        ))}
+        {cats.map((c) => {
+          const pg = progressOf(c.key)
+          return (
+            <span key={c.key}
+              className={`cat-chip ${cat === c.key ? 'active' : ''} ${c.isDaily ? 'daily' : ''}`}
+              onClick={() => setCat(c.key)}
+              title={`${c.label}：${pg.total} 题，已通过 ${pg.solved} 题`}>
+              <span className="cat-label">{c.label}</span>
+              <span className="cnt">
+                {c.count}
+                {pg.solved > 0 && <b className="cat-solved">✓{pg.solved}</b>}
+              </span>
+              {c.removable && (
+                <span className="x" title="删除该分类"
+                  onClick={(e) => { e.stopPropagation(); if (confirm(`删除分类「${c.label}」？题目不会删除。`)) onRemoveCollection(c.key) }}>✕</span>
+              )}
+            </span>
+          )
+        })}
       </div>
       <div className="cat-now">
         <span className="dot" />
         当前分类：<b>{catLabel(String(cat))}</b>
-        <span style={{ marginLeft: 'auto' }}>{itemsFor.length} 题</span>
+        {(() => {
+          const pg = progressOf(String(cat))
+          return (
+            <span className="cat-progress" title="已提交通过 / 该分类题目数">
+              {pg.solved > 0 ? `✓ ${pg.solved} / ${pg.total}` : `${pg.total} 题`}
+            </span>
+          )
+        })()}
+        <span style={{ marginLeft: 'auto', display: 'flex', gap: 6 }}>
+          {(() => {
+            const col = collections.find((c) => c.id === String(cat))
+            if (!col) {
+              return problems.some((p) => p.solvedAt || p.localPassAt) ? (
+                <button className="link-btn" title="清除全部题目的刷题记录" onClick={onClearAllRecords}>清除记录</button>
+              ) : null
+            }
+            return (
+              <>
+                <button className="link-btn" title={`清除「${col.title}」的刷题记录，重新开始刷`}
+                  onClick={() => onClearRecords(col)}>清除本单记录</button>
+              </>
+            )
+          })()}
+        </span>
       </div>
 
       <div className="problem-list">
@@ -162,7 +221,7 @@ export default function Sidebar({
         )}
         {itemsFor.map((it) => (
           <div key={it.key}
-            className={`problem-item ${activeId === it.key && !it.key.startsWith('cat:') ? 'active' : ''}`}
+            className={`problem-item ${activeId === it.key && !it.key.startsWith('cat:') ? 'active' : ''} ${it.solved ? 'solved' : ''}`}
             onClick={() => onSelectSlug(it.slug, it.host)}
             onContextMenu={(e) => {
               if (!it.loaded) return
@@ -176,6 +235,11 @@ export default function Sidebar({
               {it.titleCn && it.titleCn !== it.title && <small>{it.titleCn}</small>}
               {!it.loaded && <small style={{ color: 'var(--text-faint)' }}>未缓存 · 点击加载</small>}
             </span>
+            {it.solved ? (
+              <span className="solved-mark" title={`提交通过${it.solvedLang ? `（${it.solvedLang}）` : ''}`}>✓</span>
+            ) : it.localPass ? (
+              <span className="local-mark" title="本地用例已全过（还没提交通过）">·</span>
+            ) : null}
             <span className={diffClass[it.difficulty]}>{diffText[it.difficulty]}</span>
           </div>
         ))}

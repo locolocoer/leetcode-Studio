@@ -49,6 +49,11 @@ export interface Problem {
   starters: Partial<Record<Language, string>>
   link?: string
   source: 'leetcode' | 'local' | 'imported'
+  /** 刷题记录：提交通过（Accepted）的时间与语言 */
+  solvedAt?: string
+  solvedLang?: Language
+  /** 本地「运行所有用例」全过的最近时间（仅供提示，不算通过） */
+  localPassAt?: string
   solved?: boolean
 }
 
@@ -178,6 +183,8 @@ export interface Settings {
   aiNoAnswer?: boolean
   /** 判题模板不适配时，自动让 AI 生成编译模板（默认开启，需配置 API Key） */
   autoHarness?: boolean
+  /** 上次使用的刷题语言：下次打开题目默认用它 */
+  lastLanguage?: Language
 }
 
 // ---- AI 助手 ----

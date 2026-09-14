@@ -212,6 +212,8 @@ function registerIpc() {
     fetchSolutionDetail(slug, questionSlug))
   ipcMain.handle('catalog:get', () => store.loadCatalog())
   ipcMain.handle('catalog:set', (_e, entries: CatalogEntry[]) => { store.saveCatalog(entries); return store.loadCatalog() })
+  // 清除刷题记录（不传 slugs = 清全部）
+  ipcMain.handle('problems:clearRecords', (_e, slugs?: string[]) => store.clearRecords(slugs))
   ipcMain.handle('problems:ensure', async (_e, slug: string, host?: string) => {
     const found = store.findProblemBySlug(slug)
     const want: 'zh' | 'en' = store.loadSettings().contentLang === 'en' ? 'en' : 'zh'
@@ -222,7 +224,11 @@ function registerIpc() {
         const merged: Problem = {
           ...fresh,
           starters: { ...fresh.starters, ...(found.starters || {}) },
-          tests: found.tests?.length ? found.tests : fresh.tests
+          tests: found.tests?.length ? found.tests : fresh.tests,
+          // 刷题记录不能因为重拉题面而丢
+          solvedAt: found.solvedAt,
+          solvedLang: found.solvedLang,
+          localPassAt: found.localPassAt
         }
         store.upsertProblem(merged)
         return merged
@@ -240,7 +246,11 @@ function registerIpc() {
     const merged: Problem = {
       ...fresh,
       starters: { ...fresh.starters, ...(existing?.starters || {}) },
-      tests: existing?.tests?.length ? existing.tests : fresh.tests
+      tests: existing?.tests?.length ? existing.tests : fresh.tests,
+      // 刷题记录跟着题目走，不因切换题面语言而丢
+      solvedAt: existing?.solvedAt,
+      solvedLang: existing?.solvedLang,
+      localPassAt: existing?.localPassAt
     }
     store.upsertProblem(merged)
     return merged
