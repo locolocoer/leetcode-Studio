@@ -44,7 +44,7 @@ linux:
   target:
     - AppImage
   category: Development
-# 自动更新源：GitHub Release（CI 也会把产物同步到阿里云 OSS，主进程优先用 OSS）
+# 发布目标：GitHub Releases（CI 生成 Release；如配置了镜像，客户端会优先走镜像）
 publish:
   provider: github
   owner: locolocoer

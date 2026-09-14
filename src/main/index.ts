@@ -33,8 +33,10 @@ let debugSession: DebugSession | null = null
 let lc: LeetCodeClient
 
 // ---------------------------------------------------------------- 自动更新
-// 与 audioPlayer 同一套流程：优先阿里云 OSS（国内快），失败自动回退 GitHub Release。
-const OSS_BASE = 'https://leetcode-studio.oss-cn-beijing.aliyuncs.com/'
+// 更新源：默认 GitHub Releases；若配置了镜像（LC_UPDATE_MIRROR，例如自建对象存储/CDN），
+// 优先走镜像，失败自动回退到 GitHub Releases。
+const UPDATE_MIRROR_DEFAULT = 'https://leetcode-studio.oss-cn-beijing.aliyuncs.com/'
+const UPDATE_MIRROR = (process.env.LC_UPDATE_MIRROR || UPDATE_MIRROR_DEFAULT).trim()
 const GH_OWNER = 'locolocoer'
 const GH_REPO = 'leetcode-Studio'
 
@@ -49,11 +51,11 @@ function logUpdater(msg: string): void {
   } catch { /* ignore */ }
 }
 
-let currentFeed: 'oss' | 'github' = 'oss'
+let currentFeed: 'mirror' | 'github' = 'mirror'
 
-function useOssFeed(): void {
-  currentFeed = 'oss'
-  autoUpdater.setFeedURL({ provider: 'generic', url: OSS_BASE })
+function useMirrorFeed(): void {
+  currentFeed = 'mirror'
+  autoUpdater.setFeedURL({ provider: 'generic', url: UPDATE_MIRROR })
 }
 
 function useGitHubFeed(): void {
@@ -71,8 +73,8 @@ function setupAutoUpdater(): void {
     debug: (m: unknown) => logUpdater('DEBUG ' + String(m))
   } as never
 
-  useOssFeed()
-  logUpdater(`检查更新：feed=${currentFeed} ${OSS_BASE}`)
+  useMirrorFeed()
+  logUpdater(`检查更新：feed=${currentFeed} ${UPDATE_MIRROR}`)
 
   autoUpdater.on('checking-for-update', () => sendUpdateStatus({ state: 'checking' }))
   autoUpdater.on('update-available', (info) => {
@@ -92,9 +94,9 @@ function setupAutoUpdater(): void {
   autoUpdater.on('error', (err) => {
     const msg = err && err.message ? err.message : String(err)
     logUpdater(`错误（feed=${currentFeed}）：${msg}`)
-    if (currentFeed === 'oss') {
-      // OSS 未配置 / 网络不通 → 回退到 GitHub Release
-      console.log(`[Updater] OSS 源失败，回退到 GitHub：${msg}`)
+    if (currentFeed === 'mirror') {
+      // 镜像未配置 / 网络不通 → 回退到 GitHub Releases
+      console.log(`[Updater] 镜像源失败，回退到 GitHub Releases：${msg}`)
       useGitHubFeed()
       logUpdater('回退到 GitHub Release')
       autoUpdater.checkForUpdates().catch(() => sendUpdateStatus({ state: 'error', message: msg }))
@@ -120,7 +122,7 @@ function registerUpdateIpc(): void {
       return false
     }
     try {
-      useOssFeed()
+      useMirrorFeed()
       await autoUpdater.checkForUpdates()
       return true
     } catch (err) {

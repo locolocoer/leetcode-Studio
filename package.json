@@ -1,10 +1,18 @@
 {
   "name": "leetcode-studio",
   "version": "1.1.13",
-  "description": "本地 LeetCode 刷题与多语言调试桌面应用",
+  "description": "本地 LeetCode 刷题工作台：多语言编译运行、逐步调试、题解与 AI 引导（Electron + React + TypeScript）",
   "main": "out/main/index.js",
   "author": "LeetCode Studio",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/locolocoer/leetcode-Studio.git"
+  },
+  "homepage": "https://github.com/locolocoer/leetcode-Studio#readme",
+  "bugs": {
+    "url": "https://github.com/locolocoer/leetcode-Studio/issues"
+  },
   "engines": {
     "node": ">=20"
   },

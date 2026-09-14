@@ -121,25 +121,22 @@
 ## 自动更新
 
 - 基于 `electron-updater`：启动 8 秒后自动检查更新，**自动后台下载**，退出时自动安装；下载完成时主界面弹出提示条，可「重启并安装」。
-- 更新源优先**阿里云 OSS**（`https://leetcode.oss-cn-beijing.aliyuncs.com/`），失败自动回退 **GitHub Release**。
-- 启用 OSS：仓库 `Settings → Secrets and variables → Actions` 添加 `OSS_ACCESS_KEY_ID` / `OSS_ACCESS_KEY_SECRET`（可选变量 `OSS_BUCKET`，默认 `leetcode`；`OSS_ENDPOINT` 默认 `oss-cn-beijing.aliyuncs.com`）。未配置时直接用 GitHub，功能不受影响。
+- 默认更新源为 **GitHub Releases**；也支持自建镜像（对象存储 / CDN）加速分发，配置后优先走镜像、失败自动回退 GitHub。镜像地址通过环境变量 `LC_UPDATE_MIRROR` 指定。
 
 ## 发布流程
 
-与 [audioPlayer](https://github.com/locolocoer/audioPlayer) 一致：
-
 ```bash
-node scripts/bump-version.mjs 1.0.1     # 同步版本号
+node scripts/bump-version.mjs 1.1.14    # 同步 package.json / lock / README 中的版本号
 # 更新本文件（RELEASE.md）的更新说明
-git commit -am "release: v1.0.1"
-git tag v1.0.1 && git push origin main --tags
+git commit -am "release: v1.1.14"
+git tag v1.1.14 && git push origin main --tags
 ```
 
 GitHub Actions（`.github/workflows/main.yml`）：
 
 1. **Test**（ubuntu）：`npm ci` + 类型检查 + 构建 — push main / PR 时运行
 2. **Build windows installer**（windows-latest）：下载/裁剪内置工具链（带缓存）→ 构建 → `electron-builder --win` → 上传安装包 + `latest.yml`
-3. **Release**（仅 tag）：下载产物 → 创建 GitHub Release（自动生成 release notes）→ 有 OSS 密钥时同步到阿里云 OSS（`latest*.yml` 保留在根目录作为稳定的更新指针，其余按 `v<版本>/` 归档）
+3. **Release**（仅 tag）：下载产物 → 创建 GitHub Release（自动生成 release notes）；如配置了对象存储密钥，会同时把产物同步到镜像站（`latest*.yml` 保留在根目录作为稳定的更新指针，其余按 `v<版本>/` 归档）
 
 ## 已知限制
 

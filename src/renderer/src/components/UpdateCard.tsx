@@ -75,7 +75,7 @@ export default function UpdateCard({ status }: Props) {
         )}
       </div>
       <div style={{ fontSize: 12, color: 'var(--text-faint)', marginTop: 8, lineHeight: 1.7 }}>
-        更新源：优先阿里云 OSS，失败自动回退 GitHub Release。新版本会自动后台下载，重启应用后生效。
+        更新源：GitHub Releases（如配置了镜像会优先走镜像，失败自动回退）。新版本会自动后台下载，重启应用后生效。
         日志：<code>%APPDATA%\leetcode-studio\.runtime\updater.log</code>
       </div>
     </div>
