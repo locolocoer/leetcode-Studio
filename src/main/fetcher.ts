@@ -1,7 +1,7 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs'
 import { join } from 'path'
 import type {
-  CatalogEntry, Difficulty, FetchedProblemListEntry, Language, Method, Param, Problem, SolutionDetail,
+  CatalogEntry, CatalogItem, Difficulty, FetchedProblemListEntry, Language, Method, Param, Problem, SolutionDetail,
   SolutionItem, SolutionListResult, SolutionOrderBy, TestCase
 } from '../shared/types'
 
@@ -265,6 +265,106 @@ export async function fetchProblemIndex(host: string | undefined, cacheDir: stri
 
 function hostBaseHost(host?: string): string {
   return (host || 'leetcode.cn').toLowerCase().replace(/^https?:\/\//, '')
+}
+
+// ---------------------------------------------------------------------------
+// 学习计划（study plan）：官方「面试经典 150 题」「LeetCode 75」这类题单。
+// 与收藏夹题单不是同一个接口，这里统一转换成 CatalogEntry（kind: 'list'）。
+// ---------------------------------------------------------------------------
+
+/** 已验证可用的学习计划（count 为实际可拉取的题目数；拉取时会用接口返回的真实名字覆盖展示名） */
+export const STUDY_PLANS: { slug: string; name: string; count: number }[] = [
+  { slug: 'top-interview-150', name: '面试经典 150 题', count: 150 },
+  { slug: 'leetcode-75', name: 'LeetCode 75', count: 75 },
+  { slug: 'programming-skills', name: '编程基础 0 到 1', count: 33 },
+  { slug: 'dynamic-programming', name: '动态规划（基础版）', count: 46 },
+  { slug: 'binary-search', name: '二分查找 · 系统掌握', count: 32 },
+  { slug: 'graph-theory', name: '图论 · 从入门到精通', count: 36 },
+  { slug: '30-days-of-javascript', name: '30 天 JavaScript 挑战', count: 30 }
+]
+
+const STUDY_PLAN_QUERY = `query studyPlanV2Detail($planSlug: String!) {
+  studyPlanV2Detail(planSlug: $planSlug) {
+    name
+    slug
+    questionNum
+    planSubGroups {
+      name
+      questionNum
+      questions { titleSlug translatedTitle title questionFrontendId difficulty paidOnly }
+    }
+  }
+}`
+
+function diffFromStr(d: any): Difficulty {
+  const s = String(d || '').toLowerCase()
+  if (s === 'easy') return 'easy'
+  if (s === 'hard') return 'hard'
+  return 'medium'
+}
+
+/** 拉取一个学习计划（面试经典 150 题、LeetCode 75……） */
+export async function fetchStudyPlan(slug: string): Promise<CatalogEntry> {
+  const base = hostBase(SOLUTION_HOST)
+  const res = await fetch(`${base}/graphql`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'User-Agent': UA, Referer: `${base}/studyplan/${slug}/` },
+    body: JSON.stringify({
+      operationName: 'studyPlanV2Detail',
+      variables: { planSlug: slug },
+      query: STUDY_PLAN_QUERY
+    })
+  })
+  if (!res.ok) throw new Error(`学习计划请求失败：HTTP ${res.status}`)
+  const j: any = await res.json()
+  if (j?.errors?.length) throw new Error(String(j.errors[0]?.message || '学习计划接口报错'))
+  const d = j?.data?.studyPlanV2Detail
+  if (!d) throw new Error(`未找到学习计划「${slug}」（可能已下线）`)
+  const seen = new Set<string>()
+  const items: CatalogItem[] = []
+  for (const g of d.planSubGroups || []) {
+    for (const q of g.questions || []) {
+      if (!q?.titleSlug || seen.has(q.titleSlug)) continue
+      seen.add(q.titleSlug)
+      items.push({
+        slug: q.titleSlug,
+        frontendId: q.questionFrontendId || undefined,
+        title: q.title || q.translatedTitle || q.titleSlug,
+        titleCn: q.translatedTitle || undefined,
+        difficulty: diffFromStr(q.difficulty)
+      })
+    }
+  }
+  if (!items.length) throw new Error(`学习计划「${d.name || slug}」没有可拉取的题目`)
+  return {
+    id: 'plan-' + slug,
+    kind: 'list',
+    title: d.name || STUDY_PLANS.find((p) => p.slug === slug)?.name || slug,
+    host: SOLUTION_HOST,
+    note: '学习计划',
+    items
+  }
+}
+
+/** 我创建的题单（收藏夹），需要登录态 */
+export async function fetchMyProblemLists(headers?: Record<string, string>): Promise<{ slug: string; name: string }[]> {
+  const base = hostBase(SOLUTION_HOST)
+  try {
+    const res = await fetch(`${base}/graphql`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'User-Agent': UA, Referer: `${base}/problem-list/`, ...(headers || {}) },
+      body: JSON.stringify({
+        operationName: 'myCreatedFavoriteList',
+        query: `query myCreatedFavoriteList { myCreatedFavoriteList { favorites { slug name } } }`
+      })
+    })
+    const j: any = await res.json()
+    const list = j?.data?.myCreatedFavoriteList?.favorites
+    if (!Array.isArray(list)) return []
+    return list.filter((x: any) => x?.slug && x?.name).map((x: any) => ({ slug: x.slug, name: x.name }))
+  } catch {
+    return []
+  }
 }
 
 export async function fetchProblemListCatalog(

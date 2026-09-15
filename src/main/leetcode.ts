@@ -44,6 +44,11 @@ export class LeetCodeClient {
     return this.jar[host]
   }
 
+  /** 供其它模块带上登录态请求（例如列出「我的题单」） */
+  authHeaders(host: string): Record<string, string> {
+    return this.headers(host)
+  }
+
   private headers(host: string, extra?: Record<string, string>): Record<string, string> {
     const j = this.jarOf(host)
     const h: Record<string, string> = { 'User-Agent': UA, ...extra }

@@ -33,7 +33,10 @@ const api = {
     detail: (slug: string): Promise<Problem> => invoke('fetch:detail', slug),
     daily: (host?: string): Promise<{ problem: Problem; date: string }> => invoke('fetch:daily', host),
     listProblems: (favoriteSlug: string, host?: string, title?: string): Promise<CatalogEntry> =>
-      invoke('fetch:listProblems', favoriteSlug, host, title)
+      invoke('fetch:listProblems', favoriteSlug, host, title),
+    studyPlans: (): Promise<{ slug: string; name: string; count: number }[]> => invoke('fetch:studyPlans'),
+    studyPlan: (slug: string): Promise<CatalogEntry> => invoke('fetch:studyPlan', slug),
+    myLists: (): Promise<{ slug: string; name: string }[]> => invoke('fetch:myLists')
   },
   run: {
     tests: (p: Problem, lang: Language, src: string, tests: TestCase[]): Promise<RunResult> =>

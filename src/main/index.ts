@@ -10,7 +10,7 @@ import { runAll, normalizeManualExpected, viewHarness, verifyHarness, type Runne
 import { initAiHarnessCache, clearHarnessCache, putHarnessOverride, resetHarness } from './aiHarness'
 import {
   fetchProblemIndex, fetchProblemDetail, fetchDaily, fetchProblemListCatalog,
-  fetchSolutionList, fetchSolutionDetail
+  fetchSolutionList, fetchSolutionDetail, fetchStudyPlan, fetchMyProblemLists, STUDY_PLANS
 } from './fetcher'
 import { Store } from './store'
 import { DebugSession } from './debugger'
@@ -207,6 +207,11 @@ function registerIpc() {
   // 题单接口只有 leetcode.cn 支持（com 返回空），统一走 cn
   ipcMain.handle('fetch:listProblems', (_e, favoriteSlug: string, _host?: string, title?: string) =>
     fetchProblemListCatalog(favoriteSlug, 'leetcode.cn', title))
+  // 学习计划（面试经典 150 题、LeetCode 75……）与「我的题单」
+  ipcMain.handle('fetch:studyPlan', (_e, slug: string) => fetchStudyPlan(slug))
+  ipcMain.handle('fetch:myLists', () => fetchMyProblemLists(lc.authHeaders('leetcode.cn')))
+  // 内置的学习计划清单（slug + 名称 + 题数）
+  ipcMain.handle('fetch:studyPlans', () => STUDY_PLANS)
   // 题解：只有 leetcode.cn 提供，固定走 cn
   ipcMain.handle('solutions:list', (_e, questionSlug: string, opts?: { first?: number; skip?: number; orderBy?: SolutionOrderBy }) =>
     fetchSolutionList(questionSlug, opts || {}))

@@ -27,6 +27,9 @@ interface DshApiShape {
     detail(slug: string): Promise<Problem>
     daily(host?: string): Promise<{ problem: Problem; date: string }>
     listProblems(favoriteSlug: string, host?: string, title?: string): Promise<CatalogEntry>
+    studyPlans(): Promise<{ slug: string; name: string; count: number }[]>
+    studyPlan(slug: string): Promise<CatalogEntry>
+    myLists(): Promise<{ slug: string; name: string }[]>
   }
   run: { tests(p: Problem, lang: Language, src: string, tests: any[]): Promise<RunResult> }
   solutions: {
