@@ -113,10 +113,7 @@ export default function ListModal({ defaultHost, onClose, onAdd }: Props) {
 
           {/* 学习计划 */}
           <div className="list-section">
-            <div className="list-section-head">
-              学习计划
-              <span className="list-section-hint">力扣官方分阶段题单，带真实名字与题量</span>
-            </div>
+            <div className="list-section-head">学习计划</div>
             <div className="list-chips">
               {plans.map((p) => (
                 <button key={p.slug} className={pickClass(pick.kind === 'plan' && pick.id === p.slug)}
@@ -131,10 +128,7 @@ export default function ListModal({ defaultHost, onClose, onAdd }: Props) {
 
           {/* 官方题单 */}
           <div className="list-section">
-            <div className="list-section-head">
-              官方题单
-              <span className="list-section-hint">收藏夹形式的经典题单</span>
-            </div>
+            <div className="list-section-head">经典题单</div>
             <div className="list-chips">
               {FAVORITES.map((f) => (
                 <button key={f.id} className={pickClass(pick.kind === 'favorite' && pick.id === f.id && !title)}
@@ -149,12 +143,12 @@ export default function ListModal({ defaultHost, onClose, onAdd }: Props) {
           {/* 自定义 */}
           <div className="list-section">
             <div className="list-section-head">
-              其它题单 / 自定义
-              <span className="list-section-hint">支持粘贴链接：problem-list/xxx 或 studyplan/xxx</span>
+              其它题单
+              <span className="list-section-hint">粘贴题单链接，或直接填题单 ID</span>
             </div>
             <div style={{ display: 'flex', gap: 8 }}>
               <input
-                placeholder="题单 ID 或链接，例如 https://leetcode.cn/problem-list/HqYkJzEr/"
+                placeholder="例如 https://leetcode.cn/problem-list/HqYkJzEr/"
                 value={value}
                 onChange={(e) => setValue(e.target.value)}
                 onBlur={chooseManual}

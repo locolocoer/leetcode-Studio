@@ -242,7 +242,7 @@ export default function Sidebar({
             <span className="problem-title" title={it.title}>
               {it.title}
               {it.titleCn && it.titleCn !== it.title && <small>{it.titleCn}</small>}
-              {!it.loaded && <small style={{ color: 'var(--text-faint)' }}>未缓存 · 点击加载</small>}
+              {!it.loaded && <small style={{ color: 'var(--text-faint)' }}>点击加载题面</small>}
             </span>
             {/* 始终占一列，保证难度标签位置稳定 */}
             {it.solved ? (

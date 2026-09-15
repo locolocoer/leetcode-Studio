@@ -12,19 +12,21 @@ interface Props {
 function AiHarnessBadge({ result, onEditHarness }: { result: RunResult; onEditHarness?: () => void }) {
   const info = result.aiHarness
   const isUser = info?.origin === 'user'
-  const label = isUser
-    ? '🧩 使用你自己编辑的判题模板'
-    : info?.used
-      ? '🤖 使用了 AI 生成的判题模板'
-      : '🧩 判题模板'
+  // 只在「模板不是你写的、也不是内置的」时候提示，避免多余的说明文字
+  if (!isUser && !info?.used) {
+    return onEditHarness ? (
+      <div className="ai-harness-badge">
+        判题模板
+        <button className="link-btn" style={{ marginLeft: 8 }} onClick={onEditHarness}>查看/编辑</button>
+      </div>
+    ) : null
+  }
+  const label = isUser ? '🧩 你自定义的判题模板' : '🤖 AI 生成的判题模板'
   return (
     <div className="ai-harness-badge">
       {label}
-      {info?.used && info.note && !isUser ? <span style={{ opacity: 0.75 }}> · {info.note}</span> : null}
       {onEditHarness && (
-        <button className="link-btn" style={{ marginLeft: 8 }} onClick={onEditHarness}>
-          查看/编辑模板
-        </button>
+        <button className="link-btn" style={{ marginLeft: 8 }} onClick={onEditHarness}>查看/编辑</button>
       )}
     </div>
   )

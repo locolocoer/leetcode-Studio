@@ -87,7 +87,6 @@ export default function FetchModal({ open, onClose, onAdd, contentLang = 'zh' }:
           </div>
           <div style={{ fontSize: 11.5, color: 'var(--text-faint)', marginBottom: 10 }}>
             列表跟随顶栏的题面语言；切换语言后再打开这里会自动换成对应语言的题目名。
-            {loading && list.length === 0 ? ' 首次加载中文题目列表需要几秒，之后会用本地缓存。' : ''}
           </div>
           {error && <div className="error-text" style={{ marginBottom: 8 }}>{error}</div>}
           {loading && list.length === 0 ? (

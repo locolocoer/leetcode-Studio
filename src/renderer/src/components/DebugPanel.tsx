@@ -123,11 +123,10 @@ export default function DebugPanel({ snapshot, placeholder, onStep, onOver, onRe
         <div className="ico">🐞</div>
         <div className="big">逐步调试</div>
         <div className="sub">
-          在编辑器里按 <b>F9</b>（或点行号）加断点 → 点左侧「🐞 逐步调试」。<br />
-          命中后会高亮<b>即将执行</b>的那一行，右侧实时显示变量值。
+          在编辑器里按 <b>F9</b>（或点行号）加断点，再点左侧「🐞 逐步调试」。
         </div>
         <div className="sub" style={{ color: 'var(--text-faint)' }}>
-          支持 Python（原生跟踪）· C / C++（gdb）· Java（jdb），工具链已内置。
+          支持 Python · C / C++ · Java，工具链已内置。
         </div>
         {placeholder && <div style={{ alignSelf: 'stretch', marginTop: 12, textAlign: 'left' }}><PlaceholderNotice /></div>}
       </div>

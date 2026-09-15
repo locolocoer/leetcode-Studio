@@ -83,7 +83,7 @@ export default function AiSettingsCard({ settings, onSave }: Props) {
         <label className="toggle">
           <input type="checkbox" checked={autoHarness} onChange={(e) => setAutoHarness(e.target.checked)} />
           <span style={{ fontSize: 12.5, color: 'var(--text-dim)' }}>
-            遇到没见过的题型时，让 AI 生成编译模板（必须通过本题全部用例才会采用，并按题目缓存）
+            遇到没见过的题型时，让 AI 生成判题模板
           </span>
         </label>
       </div>
@@ -92,9 +92,9 @@ export default function AiSettingsCard({ settings, onSave }: Props) {
           <label />
           <button
             className="btn sm ghost"
-            onClick={async () => { await window.api.ai.clearHarness(); setClearMsg('已清空模板缓存，下次运行会重新生成') }}
+            onClick={async () => { await window.api.ai.clearHarness(); setClearMsg('已清空，下次运行会重新生成') }}
           >
-            清空 AI 模板缓存
+            重置判题模板
           </button>
           {clearMsg && <span style={{ fontSize: 12, color: 'var(--text-faint)' }}>{clearMsg}</span>}
         </div>
