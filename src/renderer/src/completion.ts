@@ -1,5 +1,6 @@
 import type * as Monaco from 'monaco-editor'
 import type { Language, Problem } from '../../shared/types'
+import { collectSymbols, type DocSymbols } from './symbols'
 
 /**
  * 代码补全：Monaco 对 Python / Java / C / C++ 只提供语法高亮，没有语言服务，
@@ -8,6 +9,7 @@ import type { Language, Problem } from '../../shared/types'
  *   2) 常用代码片段（for 循环、建 map、优先队列、二分……）
  *   3) 成员补全：`nums.` 这类，靠参数类型 + 代码里的声明做轻量推断
  *   4) 题目相关：当前题目的参数名、方法签名、ListNode / TreeNode 字段
+ *   5) 文档符号：你自己写的变量、函数、类/结构体及其成员
  * 另外提供签名提示（写方法名时显示参数）与悬停说明。
  */
 
@@ -620,6 +622,24 @@ const SORT_GROUP: Record<RawKind, string> = {
   param: '0', member: '1', snippet: '2', type: '3', fn: '4', keyword: '5', const: '3'
 }
 
+/** 文档符号的排序分组：局部变量最前，其次函数，再类型 */
+const SORT_DOC_VAR = '0'
+const SORT_DOC_FUNC = '1'
+const SORT_DOC_TYPE = '2'
+const SORT_DOC_MACRO = '0'
+
+/** 去掉类型里的指针/引用/const，用于查自定义类型的成员 */
+function baseTypeName(type: string): string {
+  return type
+    .replace(/\b(const|final|static|volatile|struct|class)\b/g, ' ')
+    .replace(/<[^>]*>/g, '')
+    .replace(/[*&\s]+$/, '')
+    .replace(/^[\s*&]+/, '')
+    .trim()
+    .split(/\s+/)
+    .pop() || ''
+}
+
 function toItem(monaco: typeof Monaco, raw: Raw, range: Monaco.IRange): Monaco.languages.CompletionItem {
   const insert = raw.insert ?? raw.label
   return {
@@ -632,6 +652,105 @@ function toItem(monaco: typeof Monaco, raw: Raw, range: Monaco.IRange): Monaco.l
     range,
     sortText: (raw.sort ?? SORT_GROUP[raw.kind]) + raw.label.toLowerCase()
   }
+}
+
+/** 文档符号补全：你自己写的变量 / 函数 / 类 / 宏，以及自定义类型的成员 */
+function docItems(
+  monaco: typeof Monaco,
+  lang: Language,
+  doc: DocSymbols,
+  range: Monaco.IRange
+): Monaco.languages.CompletionItem[] {
+  const items: Monaco.languages.CompletionItem[] = []
+  const langLabel = lang === 'python' ? 'Python' : lang === 'java' ? 'Java' : lang === 'cpp' ? 'C++' : 'C'
+
+  for (const v of doc.vars.values()) {
+    items.push({
+      label: v.name,
+      kind: kindOf(monaco, 'param'),
+      insertText: v.name,
+      detail: v.type ? `${v.type}` : '变量',
+      documentation: { value: `你定义的变量 \`${v.name}\`${v.type ? `（${v.type}）` : ''}` },
+      range,
+      sortText: SORT_DOC_VAR + v.name.toLowerCase()
+    })
+  }
+
+  for (const f of doc.funcs.values()) {
+    const params = f.params.map((p) => (p.type ? `${p.type} ${p.name}` : p.name)).join(', ')
+    const snippet = lang === 'python'
+      ? `${f.name}(${f.params.map((p, i) => `\${${i + 1}:${p.name}}`).join(', ')})`
+      : `${f.name}(${f.params.map((p, i) => `\${${i + 1}:${p.name}}`).join(', ')})`
+    items.push({
+      label: f.name,
+      kind: kindOf(monaco, 'fn'),
+      insertText: snippet,
+      insertTextRules: f.params.length ? monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet : undefined,
+      detail: `${f.ret ? f.ret + ' ' : ''}${f.name}(${params})${f.owner ? ` · ${f.owner}` : ''}`,
+      documentation: { value: `你自己定义的${f.owner ? `${f.owner} 的` : ''}函数\n\n\`\`\`${langLabel.toLowerCase()}\n${f.ret ? f.ret + ' ' : ''}${f.name}(${params})\n\`\`\`` },
+      range,
+      sortText: SORT_DOC_FUNC + f.name.toLowerCase()
+    })
+  }
+
+  for (const t of doc.types) {
+    items.push({
+      label: t,
+      kind: kindOf(monaco, 'type'),
+      insertText: t,
+      detail: '你定义的类型',
+      range,
+      sortText: SORT_DOC_TYPE + t.toLowerCase()
+    })
+  }
+
+  for (const m of doc.macros) {
+    items.push({
+      label: m,
+      kind: kindOf(monaco, 'const'),
+      insertText: m,
+      detail: '#define 宏',
+      range,
+      sortText: SORT_DOC_MACRO + m.toLowerCase()
+    })
+  }
+
+  for (const i of doc.imports) {
+    items.push({
+      label: i,
+      kind: kindOf(monaco, 'type'),
+      insertText: i,
+      detail: '已导入',
+      range,
+      sortText: SORT_DOC_TYPE + i.toLowerCase()
+    })
+  }
+
+  return items
+}
+
+/** 自定义类型（class/struct）的成员补全 */
+function userMembers(
+  monaco: typeof Monaco,
+  lang: Language,
+  doc: DocSymbols,
+  recvName: string,
+  range: Monaco.IRange
+): Monaco.languages.CompletionItem[] {
+  const v = doc.vars.get(recvName)
+  if (!v?.type) return []
+  const typeName = baseTypeName(v.type)
+  const members = doc.typeMembers.get(typeName)
+  if (!members?.length) return []
+  const isFn = (t: string) => t === '方法' || t.startsWith('方法')
+  return members.map((m) => ({
+    label: m.name,
+    kind: kindOf(monaco, isFn(m.type) ? 'member' : 'param'),
+    insertText: isFn(m.type) ? `${m.name}()` : m.name,
+    detail: isFn(m.type) ? `${typeName} 的方法` : `${m.type} · ${typeName} 的成员`,
+    range,
+    sortText: '1' + m.name.toLowerCase()
+  }))
 }
 
 /** 题目相关补全：参数名 / 方法签名 / 结构体 */
@@ -711,12 +830,18 @@ export function registerCompletions(monaco: typeof Monaco) {
         const range = new monaco.Range(position.lineNumber, word.startColumn, position.lineNumber, word.endColumn)
         const line = model.getLineContent(position.lineNumber).slice(0, position.column - 1)
         const code = model.getValue()
+        const doc = collectSymbols(lang, code)
 
         // `recv.` / `recv->` → 只给成员
         const memberMatch = /([A-Za-z_]\w*)\s*(?:->|\.)\s*[\w]*$/.exec(line)
         if (memberMatch) {
+          const recvName = memberMatch[1]
+          // 1) 你自己定义的类型：按声明的类型查成员
+          const mine = userMembers(monaco, lang, doc, recvName, range)
+          if (mine.length) return { suggestions: mine }
+          // 2) 内置容器的常用成员
           const kinds = inferKinds(lang, code, context.problem)
-          const recv = kinds.get(memberMatch[1]) || 'unknown'
+          const recv = kinds.get(recvName) || 'unknown'
           const members = MEMBERS[lang][recv]
           if (members?.length) {
             const suggestions = members.map((m) => toItem(monaco, { ...m, kind: 'member', sort: '1' }, range))
@@ -727,6 +852,7 @@ export function registerCompletions(monaco: typeof Monaco) {
 
         const suggestions: Monaco.languages.CompletionItem[] = [
           ...problemItems(monaco, lang, code, range),
+          ...docItems(monaco, lang, doc, range),
           ...BASE[lang].map((r) => toItem(monaco, r, range))
         ]
         return { suggestions }
