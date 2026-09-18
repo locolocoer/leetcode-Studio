@@ -230,7 +230,7 @@ export function splitHarness(language: Language, harness: Harness): { head: stri
 }
 
 /** 缓存/覆盖：题目+语言+签名 → 驱动代码 */
-export type HarnessSource = 'ai' | 'user'
+export type HarnessSource = 'ai' | 'user' | 'shared'
 interface CacheEntry {
   code: string
   source: HarnessSource
@@ -250,7 +250,8 @@ export function initAiHarnessCache(dataDir: string): void {
   }
 }
 
-function cacheKey(problem: Problem, language: Language): string {
+/** 题目 + 语言 + 签名的哈希：本地缓存与共享模板库都用它做 key */
+export function harnessSigHash(problem: Problem): string {
   const sig = JSON.stringify({
     p: problem.params,
     r: problem.returnType,
@@ -261,7 +262,11 @@ function cacheKey(problem: Problem, language: Language): string {
   })
   let h = 0
   for (let i = 0; i < sig.length; i++) h = (h * 31 + sig.charCodeAt(i)) | 0
-  return `${problem.id || problem.slug || 'x'}:${language}:${h}`
+  return String(h)
+}
+
+function cacheKey(problem: Problem, language: Language): string {
+  return `${problem.id || problem.slug || 'x'}:${language}:${harnessSigHash(problem)}`
 }
 
 function persist(): void {
@@ -293,6 +298,13 @@ export function putCachedHarness(problem: Problem, language: Language, code: str
 export function putHarnessOverride(problem: Problem, language: Language, code: string): void {
   if (!cache) return
   cache[cacheKey(problem, language)] = { code, source: 'user', at: Date.now() }
+  persist()
+}
+
+/** 从共享模板库拉取并验证通过的模板 */
+export function putSharedHarness(problem: Problem, language: Language, code: string): void {
+  if (!cache) return
+  cache[cacheKey(problem, language)] = { code, source: 'shared', at: Date.now() }
   persist()
 }
 

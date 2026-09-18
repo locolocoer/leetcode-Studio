@@ -34,6 +34,9 @@ export default function HarnessModal({ problem, language, code, tests, onClose, 
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null)
   const [result, setResult] = useState<RunResult | null>(null)
   const [showHead, setShowHead] = useState(false)
+  const [publishing, setPublishing] = useState(false)
+  const [publishMsg, setPublishMsg] = useState<string | null>(null)
+  const [sharedCount, setSharedCount] = useState(0)
   const hostRef = useRef<HTMLDivElement | null>(null)
   const editorRef = useRef<monaco.editor.IStandaloneCodeEditor | null>(null)
   /** 上一次「服务器认可」的内容：用它判断是否真的被改过（打开时不该显示未保存） */
@@ -51,8 +54,26 @@ export default function HarnessModal({ problem, language, code, tests, onClose, 
       setBaseline(v?.driver || '')
       setDirty(false)
     })()
+    void window.api.harness.sharedCount().then((n) => { if (alive) setSharedCount(n) }).catch(() => {})
     return () => { alive = false }
   }, [problem, language, code])
+
+  /** 发布当前模板到共享库 */
+  const publish = async () => {
+    const text = editorRef.current?.getValue() ?? driver
+    if (!text.trim()) { setPublishMsg('模板为空，先写点东西再发布'); return }
+    setPublishing(true)
+    setPublishMsg(null)
+    try {
+      const r = await window.api.harness.publish(problem, language, text)
+      setPublishMsg((r.ok ? '✓ ' : '✗ ') + r.message)
+      if (r.ok) void window.api.harness.sharedCount().then(setSharedCount).catch(() => {})
+    } catch (e: any) {
+      setPublishMsg('✗ ' + String(e?.message || e))
+    } finally {
+      setPublishing(false)
+    }
+  }
 
   useEffect(() => {
     if (!hostRef.current) return
@@ -158,6 +179,9 @@ export default function HarnessModal({ problem, language, code, tests, onClose, 
           <button className="btn sm" onClick={() => run(false)} disabled={busy}>只验证</button>
           <button className="btn sm ghost" onClick={() => { setDriver(view?.driver || ''); setDirty(false) }} disabled={busy}>撤销修改</button>
           <button className="btn sm ghost" onClick={reset} disabled={busy}>恢复内置模板</button>
+          <button className="btn sm ghost" onClick={publish} disabled={busy || publishing}>
+            {publishing ? '发布中…' : '发布到共享库'}
+          </button>
           <button className="btn sm ghost" onClick={() => setShowHead((s) => !s)}>
             {showHead ? '隐藏固定脚手架' : '查看固定脚手架'}
           </button>
@@ -166,6 +190,13 @@ export default function HarnessModal({ problem, language, code, tests, onClose, 
               {msg.ok ? '✓ ' : '✗ '}{msg.text}
             </span>
           )}
+        </div>
+        {publishMsg && (
+          <div className="harness-publish-msg">{publishMsg}</div>
+        )}
+        <div className="harness-shared-hint">
+          共享库里有 <b>{sharedCount}</b> 份模板。发布后其他用户遇到同一题型会自动从 OSS / GitHub 拉取，
+          不必再各自让 AI 生成；发布需要先在设置里填 GitHub Token（未填则导出到本地目录）。
         </div>
 
         {showHead && view && (

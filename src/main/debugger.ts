@@ -6,7 +6,8 @@ import type {
 } from '../shared/types'
 import { sanitize, isLockError, killProcessesUnder, verifyHarnessObject } from './runner'
 import { buildHarness, intersectIndices, pyShapes, pyIndent, isNodeReturn, nodeValueReturn, PY_NODES } from './harness'
-import { getHarnessEntry, assembleHarness, generateHarness } from './aiHarness'
+import { getHarnessEntry, assembleHarness, generateHarness, harnessSigHash } from './aiHarness'
+import { findSharedHarness, installSharedHarness } from './harnessRegistry'
 import { startGdbRunner, startJdbRunner, type NativeRunner } from './nativeDebug'
 
 export type DebuggerEvents = {
@@ -561,7 +562,32 @@ export class DebugSession {
     }
     compileErr = await compile()
 
-    // 编译失败且模板是内置的 → 和「运行」一样让 AI 生成一份并验证（成功后重写文件再编译）
+    // 编译失败且用的是内置模板：先找共享模板库（别人已经解决过的题型），再考虑让 AI 生成
+    if (compileErr && !entry && this.settings?.shareHarness !== false) {
+      const sigHash = harnessSigHash(problem)
+      const shared = await findSharedHarness(problem, language, sigHash)
+      if (shared) {
+        const h = assembleHarness(language, base, shared.code)
+        if (h) {
+          const v = await verifyHarnessObject(problem, language, sourceCode, h, problem.tests, {
+            runtimeDir,
+            settings: this.settings!,
+            toolchains: { [language]: toolchain } as Record<Language, ToolchainStatus>
+          })
+          if (v.ok) {
+            installSharedHarness(problem, language, shared.code)
+            harness = h
+            writeHarness()
+            compileErr = await compile()
+            this.log(`已采用共享模板库的模板（${shared.from === 'oss' ? 'OSS' : 'GitHub'}）`)
+          } else {
+            this.log('共享模板库的模板未通过验证，忽略')
+          }
+        }
+      }
+    }
+
+    // 仍然编译失败 → 和「运行」一样让 AI 生成一份并验证（成功后重写文件再编译）
     if (compileErr && !entry && this.settings?.aiApiKey && this.settings.autoHarness !== false) {
       this.log('编译失败，尝试让 AI 生成判题模板')
       this.snap = { status: 'starting', events: [], programOutput: '', language }

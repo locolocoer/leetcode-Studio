@@ -54,7 +54,10 @@ const api = {
       invoke('harness:verify', p, lang, src, driver, tests),
     save: (p: Problem, lang: Language, src: string, driver: string, tests: TestCase[]): Promise<RunResult> =>
       invoke('harness:save', p, lang, src, driver, tests),
-    reset: (p: Problem, lang: Language): Promise<boolean> => invoke('harness:reset', p, lang)
+    reset: (p: Problem, lang: Language): Promise<boolean> => invoke('harness:reset', p, lang),
+    publish: (p: Problem, lang: Language, code: string, note?: string): Promise<{ ok: boolean; message: string }> =>
+      invoke('harness:publish', p, lang, code, note),
+    sharedCount: (): Promise<number> => invoke('harness:sharedCount')
   },
   debug: {
     start: (p: Problem, lang: Language, src: string, test: TestCase, bps: number[]): Promise<DebugSnapshot> =>

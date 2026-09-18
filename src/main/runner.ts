@@ -5,7 +5,8 @@ import type {
   CaseResult, HarnessView, Language, Problem, RunResult, Settings, TestCase, ToolchainStatus
 } from '../shared/types'
 import { buildHarness, type Harness } from './harness'
-import { generateHarness, getHarnessEntry, assembleHarness, splitHarness } from './aiHarness'
+import { generateHarness, getHarnessEntry, assembleHarness, splitHarness, harnessSigHash } from './aiHarness'
+import { findSharedHarness, installSharedHarness } from './harnessRegistry'
 
 const RUNNER_TIMEOUT_MS_DEFAULT = 4000
 
@@ -312,13 +313,18 @@ export async function runAll(
     }
   }
 
-  // 1) 用过并验证通过的 AI 模板（缓存）
-  if (aiEnabled && entry) {
+  // 1) 用过并验证通过的模板（AI 生成的 / 从共享库拉取的，本地缓存）
+  if (entry && entry.source !== 'user') {
     const h = assembleHarness(language, base, entry.code)
     if (h) {
       const r = await runWithHarness(problem, language, sourceCode, tests, ctx, tc, h, onTest)
       if (r.ok) {
-        return { ...r, aiHarness: { used: true, origin: 'ai', note: '使用已完成验证的 AI 适配模板（本地缓存）' } }
+        return {
+          ...r,
+          aiHarness: entry.source === 'shared'
+            ? { used: false, origin: 'user', note: '使用共享模板库里的判题模板' }
+            : { used: true, origin: 'ai', note: '使用已完成验证的 AI 适配模板（本地缓存）' }
+        }
       }
     }
   }
@@ -326,6 +332,25 @@ export async function runAll(
   // 2) 确定性模板
   const first = await runWithHarness(problem, language, sourceCode, tests, ctx, tc, base, onTest)
   if (!looksLikeHarnessProblem(first)) return first
+
+  // 3) 看起来是模板的问题：先找共享模板库（别人已经解决过的题型），验证通过就直接用
+  if (ctx.settings.shareHarness !== false) {
+    ctx.onNote?.('正在从共享模板库查找这道题的判题模板…')
+    const shared = await findSharedHarness(problem, language, harnessSigHash(problem))
+    if (shared) {
+      const h = assembleHarness(language, base, shared.code)
+      if (h) {
+        const v = await runWithHarness(problem, language, sourceCode, tests, ctx, tc, h, onTest)
+        if (v.ok) {
+          installSharedHarness(problem, language, shared.code)
+          ctx.onNote?.(`已采用共享模板库的模板（来自 ${shared.from === 'oss' ? 'OSS' : 'GitHub'}）`)
+          return { ...v, aiHarness: { used: false, origin: 'user', note: '共享模板库' } }
+        }
+      }
+    }
+    ctx.onNote?.('共享模板库里暂时没有可用的模板')
+  }
+
   if (!aiEnabled) {
     return first
   }

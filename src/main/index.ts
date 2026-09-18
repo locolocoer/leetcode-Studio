@@ -7,7 +7,8 @@ import type {
 } from '../shared/types'
 import { detectAll, detectToolchain } from './toolchain'
 import { runAll, normalizeManualExpected, viewHarness, verifyHarness, type RunnerContext } from './runner'
-import { initAiHarnessCache, clearHarnessCache, putHarnessOverride, resetHarness } from './aiHarness'
+import { initAiHarnessCache, clearHarnessCache, putHarnessOverride, resetHarness, harnessSigHash } from './aiHarness'
+import { publishSharedHarness, fetchSharedIndex } from './harnessRegistry'
 import {
   fetchProblemIndex, fetchProblemDetail, fetchDaily, fetchProblemListCatalog,
   fetchSolutionList, fetchSolutionDetail, fetchStudyPlan, fetchMyProblemLists, STUDY_PLANS
@@ -287,6 +288,19 @@ function registerIpc() {
   // 判题模板：查看 / 编辑 / 验证 / 恢复默认
   ipcMain.handle('harness:view', (_e, p: Problem, lang: Language, src: string) => viewHarness(p, lang, src))
   ipcMain.handle('harness:reset', (_e, p: Problem, lang: Language) => { resetHarness(p, lang); return true })
+  // 发布判题模板到共享库（配了 GitHub Token 就直接提交，否则导出到本地）
+  ipcMain.handle('harness:publish', async (_e, p: Problem, lang: Language, code: string, note?: string) => {
+    const settings = store.loadSettings()
+    return publishSharedHarness(settings, p, lang, harnessSigHash(p), code, {
+      note,
+      author: settings.lcUsername || 'anonymous',
+      outDir: runtimeDir
+    })
+  })
+  ipcMain.handle('harness:sharedCount', async () => {
+    const idx = await fetchSharedIndex()
+    return idx?.entries.length ?? 0
+  })
   ipcMain.handle('harness:verify', (_e, p: Problem, lang: Language, src: string, driver: string, tests: TestCase[]) =>
     verifyHarness(p, lang, src, driver, tests, ctx())
   )

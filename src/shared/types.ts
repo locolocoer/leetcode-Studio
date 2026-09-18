@@ -185,6 +185,10 @@ export interface Settings {
   autoHarness?: boolean
   /** 上次使用的刷题语言：下次打开题目默认用它 */
   lastLanguage?: Language
+  /** 共享判题模板库：内置模板不适配时自动从 OSS / GitHub 拉取（默认开启） */
+  shareHarness?: boolean
+  /** 发布模板到共享库用的 GitHub Token（只需该仓库的 contents 写权限） */
+  githubToken?: string
 }
 
 // ---- AI 助手 ----

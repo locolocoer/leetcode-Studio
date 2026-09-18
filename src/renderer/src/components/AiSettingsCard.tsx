@@ -21,19 +21,21 @@ export default function AiSettingsCard({ settings, onSave }: Props) {
   const [key, setKey] = useState(settings.aiApiKey || '')
   const [noAnswer, setNoAnswer] = useState(settings.aiNoAnswer !== false)
   const [autoHarness, setAutoHarness] = useState(settings.autoHarness !== false)
+  const [shareHarness, setShareHarness] = useState(settings.shareHarness !== false)
+  const [ghToken, setGhToken] = useState(settings.githubToken || '')
   const [testing, setTesting] = useState(false)
   const [testMsg, setTestMsg] = useState<{ ok: boolean; text: string } | null>(null)
   const [clearMsg, setClearMsg] = useState('')
 
   const save = () => {
-    onSave({ ...settings, aiBaseUrl: baseUrl.trim(), aiModel: model.trim(), aiApiKey: key.trim(), aiNoAnswer: noAnswer, autoHarness })
+    onSave({ ...settings, aiBaseUrl: baseUrl.trim(), aiModel: model.trim(), aiApiKey: key.trim(), aiNoAnswer: noAnswer, autoHarness, shareHarness, githubToken: ghToken.trim() })
   }
 
   const test = async () => {
     setTesting(true)
     setTestMsg(null)
     // 先落盘再自检，保证主进程用的是当前填写的配置
-    onSave({ ...settings, aiBaseUrl: baseUrl.trim(), aiModel: model.trim(), aiApiKey: key.trim(), aiNoAnswer: noAnswer, autoHarness })
+    onSave({ ...settings, aiBaseUrl: baseUrl.trim(), aiModel: model.trim(), aiApiKey: key.trim(), aiNoAnswer: noAnswer, autoHarness, shareHarness, githubToken: ghToken.trim() })
     const r = await window.api.ai.test()
     setTestMsg({ ok: r.ok, text: r.message })
     setTesting(false)
@@ -99,6 +101,24 @@ export default function AiSettingsCard({ settings, onSave }: Props) {
           {clearMsg && <span style={{ fontSize: 12, color: 'var(--text-faint)' }}>{clearMsg}</span>}
         </div>
       )}
+      <div className="setting-row">
+        <label>共享模板库</label>
+        <label className="toggle">
+          <input type="checkbox" checked={shareHarness} onChange={(e) => setShareHarness(e.target.checked)} />
+          <span style={{ fontSize: 12.5, color: 'var(--text-dim)' }}>
+            内置模板不适配时，先从共享库拉取（别人已经解决过的题型就不用再让 AI 生成了）
+          </span>
+        </label>
+      </div>
+      <div className="setting-row">
+        <label>GitHub Token</label>
+        <input
+          type="text"
+          placeholder="发布模板到共享库时需要（只需该仓库 contents 写权限，可留空）"
+          value={ghToken}
+          onChange={(e) => setGhToken(e.target.value)}
+        />
+      </div>
 
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
         <button className="btn sm" onClick={test} disabled={testing}>{testing ? '测试中…' : '保存并测试连接'}</button>

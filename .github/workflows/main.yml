@@ -99,6 +99,44 @@ jobs:
             release/*.blockmap
           if-no-files-found: error
 
+  # ---------------------------------------------------------------- 共享判题模板库 → 镜像
+  # 仓库里的 harness/shared/ 是共享模板库的「唯一真源」；每次改动都同步到对象存储，
+  # 客户端会优先从镜像拉取（失败回退 GitHub raw），这样新题型一次修复、所有用户共享。
+  sync-harness:
+    name: Sync shared harness templates
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+
+      - name: Check whether harness templates changed
+        id: changed
+        run: |
+          if git diff --name-only HEAD^ HEAD | grep -q '^harness/shared/'; then
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Upload shared templates to object storage
+        if: steps.changed.outputs.changed == 'true' && env.OSS_ACCESS_KEY_ID != ''
+        continue-on-error: true
+        env:
+          OSS_ACCESS_KEY_ID: ${{ secrets.OSS_ACCESS_KEY_ID }}
+          OSS_ACCESS_KEY_SECRET: ${{ secrets.OSS_ACCESS_KEY_SECRET }}
+          OSS_BUCKET: ${{ vars.OSS_BUCKET || 'leetcode-studio' }}
+          OSS_ENDPOINT: ${{ vars.OSS_ENDPOINT || 'oss-cn-beijing.aliyuncs.com' }}
+        run: |
+          set -e
+          curl -sL https://gosspublic.alicdn.com/ossutil/1.7.18/ossutil64 -o ossutil
+          chmod +x ossutil
+          ./ossutil config -e "$OSS_ENDPOINT" -i "$OSS_ACCESS_KEY_ID" -k "$OSS_ACCESS_KEY_SECRET"
+          ./ossutil cp -rf harness/shared/ "oss://${OSS_BUCKET}/harness/shared/" --acl public-read
+          echo "✓ 共享模板已同步到 oss://${OSS_BUCKET}/harness/shared/"
+
   # ---------------------------------------------------------------- 发布
   release:
     needs: build

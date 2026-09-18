@@ -41,6 +41,8 @@ interface DshApiShape {
     verify(p: Problem, lang: Language, src: string, driver: string, tests: TestCase[]): Promise<RunResult>
     save(p: Problem, lang: Language, src: string, driver: string, tests: TestCase[]): Promise<RunResult>
     reset(p: Problem, lang: Language): Promise<boolean>
+    publish(p: Problem, lang: Language, code: string, note?: string): Promise<{ ok: boolean; message: string }>
+    sharedCount(): Promise<number>
   }
   debug: {
     start(p: Problem, lang: Language, src: string, test: any, bps: number[]): Promise<DebugSnapshot>
