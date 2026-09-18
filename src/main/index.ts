@@ -265,7 +265,9 @@ function registerIpc() {
   ipcMain.handle('run:tests', (_e, p: Problem, lang: Language, src: string, tests: TestCase[]) =>
     a.runTests(p, lang, src, tests))
   ipcMain.handle('debug:start', (_e, p: Problem, lang: Language, src: string, test: TestCase, bps: number[]) => {
-    const toolchains = detectAll(store.loadSettings())
+    const settings = store.loadSettings()
+    debugSession!.setSettings(settings)
+    const toolchains = detectAll(settings)
     return debugSession!.start(p, src, test, lang, toolchains[lang], runtimeDir, bps)
   })
   ipcMain.handle('debug:step', () => { debugSession?.step(); return debugSession?.snapshot })

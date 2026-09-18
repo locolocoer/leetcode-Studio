@@ -2,10 +2,11 @@ import { spawn, execFileSync, type ChildProcess } from 'child_process'
 import { writeFileSync, appendFileSync, readFileSync, existsSync, mkdirSync, rmSync } from 'fs'
 import { join, dirname, delimiter } from 'path'
 import type {
-  DebugEvent, DebugSnapshot, Language, Problem, TestCase, ToolchainStatus
+  DebugEvent, DebugSnapshot, Language, Problem, Settings, TestCase, ToolchainStatus
 } from '../shared/types'
-import { sanitize, isLockError, killProcessesUnder } from './runner'
+import { sanitize, isLockError, killProcessesUnder, verifyHarnessObject } from './runner'
 import { buildHarness, intersectIndices, pyShapes, pyIndent, isNodeReturn, nodeValueReturn, PY_NODES } from './harness'
+import { getHarnessEntry, assembleHarness, generateHarness } from './aiHarness'
 import { startGdbRunner, startJdbRunner, type NativeRunner } from './nativeDebug'
 
 export type DebuggerEvents = {
@@ -241,10 +242,17 @@ export class DebugSession {
   private watchdog: NodeJS.Timeout | null = null
   private stopped = false
   private native: NativeRunner | null = null
+  /** 当前设置（AI Key / 自动判题模板开关）：编译失败时用来兜底生成模板 */
+  private settings: Settings | null = null
 
   constructor(cb: DebuggerEvents) {
     this.cb = cb
     this.snap = { status: 'idle', events: [], programOutput: '', language: 'python' }
+  }
+
+  /** 每次开始调试时由主进程注入当前设置 */
+  setSettings(settings: Settings | null) {
+    this.settings = settings
   }
 
   private log(msg: string) {
@@ -500,9 +508,22 @@ export class DebugSession {
     this.dir = dir
     this.logPath = join(dir, 'session.log')
 
-    const harness = buildHarness(problem, language, sourceCode)
-    for (const f of harness.files) writeFileSync(join(dir, f.name), f.content, 'utf8')
-    writeFileSync(join(dir, 'input.txt'), test.input.join('\n') + '\n', 'utf8')
+    // 与「运行」用同一套模板解析：优先你手写的 / AI 生成并验证过的（缓存），否则内置确定性模板
+    const base = buildHarness(problem, language, sourceCode)
+    let harness = base
+    const entry = getHarnessEntry(problem, language)
+    if (entry) {
+      const h = assembleHarness(language, base, entry.code)
+      if (h) {
+        harness = h
+        this.log(`使用${entry.source === 'user' ? '你编辑的' : 'AI 生成并验证过的'}判题模板`)
+      }
+    }
+    const writeHarness = () => {
+      for (const f of harness.files) writeFileSync(join(dir, f.name), f.content, 'utf8')
+      writeFileSync(join(dir, 'input.txt'), test.input.join('\n') + '\n', 'utf8')
+    }
+    writeHarness()
     // 注意：不再向用户代码注入任何调试辅助头文件。
     // 容器显示改用「只读内存」的方式（见 nativeDebug.ts 的 readStl），
     // 绝不在被调试程序里调用函数——那种方式一旦卡住会让 gdb 永久无响应。
@@ -514,27 +535,70 @@ export class DebugSession {
     // 链接时若 main.exe 仍被上一次调试的残留进程占用，先清理再重试，必要时换输出名
     let exeName = 'main.exe'
     let compileErr = ''
-    for (let attempt = 0; attempt < 3; attempt++) {
-      const args = language === 'cpp'
-        ? ['-std=c++17', '-g', '-O0', '-static', 'main.cpp', '-o', exeName]
-        : ['-g', '-O0', '-static', 'main.c', '-o', exeName]
-      try {
-        execFileSync(compiler, args, { cwd: dir, encoding: 'utf8', timeout: 30000, env })
-        compileErr = ''
-        break
-      } catch (e: any) {
-        compileErr = ((e?.stdout || '') + (e?.stderr || '')).toString()
-        if (!isLockError(compileErr)) break
-        if (attempt === 0) {
-          this.log('编译产物被占用，清理残留调试进程后重试')
-          killProcessesUnder(dir)
-          await sleepMs(400)
-        } else {
-          exeName = `main-${Date.now().toString().slice(-6)}.exe`
-          this.log('仍被占用，改用输出名 ' + exeName)
+    const compile = async (): Promise<string> => {
+      let err = ''
+      for (let attempt = 0; attempt < 3; attempt++) {
+        const args = language === 'cpp'
+          ? ['-std=c++17', '-g', '-O0', '-static', 'main.cpp', '-o', exeName]
+          : ['-g', '-O0', '-static', 'main.c', '-o', exeName]
+        try {
+          execFileSync(compiler, args, { cwd: dir, encoding: 'utf8', timeout: 30000, env })
+          return ''
+        } catch (e: any) {
+          err = ((e?.stdout || '') + (e?.stderr || '')).toString()
+          if (!isLockError(err)) return err
+          if (attempt === 0) {
+            this.log('编译产物被占用，清理残留调试进程后重试')
+            killProcessesUnder(dir)
+            await sleepMs(400)
+          } else {
+            exeName = `main-${Date.now().toString().slice(-6)}.exe`
+            this.log('仍被占用，改用输出名 ' + exeName)
+          }
         }
       }
+      return err
     }
+    compileErr = await compile()
+
+    // 编译失败且模板是内置的 → 和「运行」一样让 AI 生成一份并验证（成功后重写文件再编译）
+    if (compileErr && !entry && this.settings?.aiApiKey && this.settings.autoHarness !== false) {
+      this.log('编译失败，尝试让 AI 生成判题模板')
+      this.snap = { status: 'starting', events: [], programOutput: '', language }
+      const gen = await generateHarness(
+        this.settings,
+        problem,
+        language,
+        sourceCode,
+        base,
+        async (h) => {
+          const v = await verifyHarnessObject(problem, language, sourceCode, h, problem.tests, {
+            runtimeDir,
+            settings: this.settings!,
+            toolchains: { [language]: toolchain } as Record<Language, ToolchainStatus>
+          })
+          if (v.compileFailed) return { ok: false, detail: '编译失败：\n' + String(v.compileOutput || '').slice(0, 1200) }
+          const failed = (v.cases || []).filter((c) => !c.passed)
+          if (failed.length) {
+            return {
+              ok: false,
+              detail: failed.slice(0, 2).map((c) =>
+                `用例输入 ${c.input.join(' | ')}：期望 ${c.expected}，实际 ${c.actual}${c.error ? '，' + c.error : ''}`
+              ).join('\n')
+            }
+          }
+          return { ok: true, detail: '' }
+        },
+        (m) => this.log('AI: ' + m)
+      )
+      if (gen) {
+        harness = gen.harness
+        writeHarness()
+        compileErr = await compile()
+        this.log(compileErr ? 'AI 模板仍编译失败' : 'AI 模板已生效')
+      }
+    }
+
     if (compileErr) {
       this.snap = {
         status: 'error', events: [], programOutput: '', language,

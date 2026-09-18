@@ -332,9 +332,21 @@ export function startGdbRunner(o: NativeOpts): NativeRunner {  let child: ChildP
   /** 读 vector<T>（T 为标量）的元素：start[0]@n，gdb 直接打印成 {a, b, c} */
   async function vecScalarItems(expr: string, n: number): Promise<string[]> {
     const s = await evalExpr(`(${expr})._M_impl._M_start[0]@${n}`, 5000)
-    const m = /^\{(.*)\}$/s.exec(s.trim())
+    const t = s.trim()
+    // char 数组：gdb 会直接打印成字符串 "1010"
+    const str = /^"(.*)"$/.exec(t)
+    if (str) return str[1].split('').map((ch) => `'${ch}'`)
+    const m = /^\{(.*)\}$/s.exec(t)
     if (!m) return []
-    return m[1].split(',').map((x) => x.trim()).filter((x) => x !== '')
+    return m[1]
+      .split(',')
+      .map((x) => {
+        const item = x.trim()
+        // char 元素：gdb 会打印成 49 '1'，只保留字符形式
+        const ch = /'((?:[^'\\]|\\.)*)'/.exec(item)
+        return ch ? `'${ch[1]}'` : item
+      })
+      .filter((x) => x !== '')
   }
 
   async function readStl(name: string): Promise<string | null> {

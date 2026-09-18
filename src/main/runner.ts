@@ -408,4 +408,19 @@ export async function verifyHarness(
   return runWithHarness(problem, language, sourceCode, tests, ctx, tc, h, onTest)
 }
 
+/** 直接验证一份完整模板（调试路径的 AI 兜底用它校验生成的模板） */
+export async function verifyHarnessObject(
+  problem: Problem,
+  language: Language,
+  sourceCode: string,
+  harness: Harness,
+  tests: TestCase[],
+  ctx: RunnerContext,
+  onTest?: (caseResult: CaseResult) => void
+): Promise<RunResult> {
+  const tc = ctx.toolchains[language]
+  if (!tc?.available) return { ok: false, cases: [], error: '工具链不可用' }
+  return runWithHarness(problem, language, sourceCode, tests, ctx, tc, harness, onTest)
+}
+
 export { deepEqual, randId }

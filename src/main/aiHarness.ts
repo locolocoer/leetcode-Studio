@@ -97,7 +97,8 @@ function buildPrompt(
   language: Language,
   sourceCode: string,
   scaffoldHead: string,
-  feedback: string | null
+  feedback: string | null,
+  previousCode: string | null
 ): string {
   return `你要为一个本地刷题工具的**判题驱动程序**（编译模板）生成代码。
 
@@ -130,7 +131,7 @@ ${scaffoldHead.slice(0, 2500)}
 3. **禁止**任何进程、网络、文件系统操作（system/popen/subprocess/exec/Runtime.exec/ProcessBuilder/socket 等）。
 4. 不要修改或覆盖用户的解答文件。
 5. 注意边界：空树/空链表、null 值、多参数、引用参数（如 vector<int>&）等情况。
-${feedback ? `\n## 上一次尝试的问题（请修正）\n${feedback.slice(0, 2500)}\n` : ''}
+${feedback ? `\n## 上一次尝试的问题（请修正）\n${feedback.slice(0, 2500)}\n` : ''}${previousCode ? `\n## 上一次生成的驱动（在上面的问题基础上改，不要推倒重来）\n\`\`\`\n${previousCode.slice(0, 4000)}\n\`\`\`\n` : ''}
 ## 输出格式（只输出 JSON，不要 markdown 代码块，不要解释）
 {"code":"<完整驱动代码，字符串里的换行写成 \\n 转义>"}
 `
@@ -326,17 +327,19 @@ export async function generateHarness(
 
   const notes: string[] = []
   let feedback: string | null = null
+  let previousCode: string | null = null
   let attempts = 0
+  const MAX_ROUNDS = 3
 
-  for (let round = 0; round < 2; round++) {
+  for (let round = 0; round < MAX_ROUNDS; round++) {
     attempts++
     onProgress?.(round === 0 ? 'AI 正在生成判题模板…' : 'AI 正在根据报错修正模板…')
-    const prompt = buildPrompt(problem, language, sourceCode, scaffoldHead, feedback)
+    const prompt = buildPrompt(problem, language, sourceCode, scaffoldHead, feedback, previousCode)
     const res = await aiComplete(
       settings,
       '你是严谨的判题适配器作者：只输出要求的 JSON，代码必须能编译、能真实调用用户解答，绝不硬编码答案。',
       prompt,
-      { maxTokens: 4096, temperature: round === 0 ? 0.15 : 0.25 }
+      { maxTokens: 4096, temperature: round === 0 ? 0.15 : 0.3 }
     )
     if (!res.ok) {
       notes.push('生成失败：' + ((res as { message?: string }).message || '未知错误'))
@@ -348,6 +351,7 @@ export async function generateHarness(
       notes.push('模型没有返回可解析的代码')
       continue
     }
+    previousCode = code
     const check = checkGenerated(problem, language, code)
     if (!check.ok) {
       const why = (check as { reason?: string }).reason || '未通过校验'

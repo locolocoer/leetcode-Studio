@@ -579,6 +579,20 @@ class Json {
     List<?> l = (List<?>) o; String[] r = new String[l.size()];
     for (int k = 0; k < l.size(); k++) r[k] = toStr(l.get(k)); return r;
   }
+  // char / character：力扣里字符矩阵写作 character[][]
+  public static char toChar(Object o) {
+    if (o instanceof String) { String s = (String) o; return s.isEmpty() ? '\\0' : s.charAt(0); }
+    if (o instanceof Character) return (Character) o;
+    return (char) toInt(o);
+  }
+  public static char[] toCharArray(Object o) {
+    List<?> l = (List<?>) o; char[] r = new char[l.size()];
+    for (int k = 0; k < l.size(); k++) r[k] = toChar(l.get(k)); return r;
+  }
+  public static char[][] toCharMatrix(Object o) {
+    List<?> l = (List<?>) o; char[][] r = new char[l.size()][];
+    for (int k = 0; k < l.size(); k++) r[k] = toCharArray(l.get(k)); return r;
+  }
   public static int[][] toIntMatrix(Object o) {
     List<?> l = (List<?>) o; int[][] r = new int[l.size()][];
     for (int k = 0; k < l.size(); k++) r[k] = toIntArray(l.get(k)); return r;
@@ -799,6 +813,7 @@ function javaLoadFrom(shape: Shape, expr: string): string {
         case 'int': return `Json.toInt(${expr})`
         case 'double': return `Json.toDouble(${expr})`
         case 'bool': return `Json.toBool(${expr})`
+        case 'char': return `Json.toChar(${expr})`
         case 'string': return `Json.toStr(${expr})`
       }
       break
@@ -809,6 +824,7 @@ function javaLoadFrom(shape: Shape, expr: string): string {
           case 'int': return `Json.toIntArray(${expr})`
           case 'double': return `Json.toDoubleArray(${expr})`
           case 'bool': return `Json.toBoolArray(${expr})`
+          case 'char': return `Json.toCharArray(${expr})`
           case 'string': return `Json.toStrArray(${expr})`
         }
       }
@@ -817,6 +833,7 @@ function javaLoadFrom(shape: Shape, expr: string): string {
         if (inn.kind === 'scalar') {
           switch (inn.base) {
             case 'int': return `Json.toIntMatrix(${expr})`
+            case 'char': return `Json.toCharMatrix(${expr})`
             case 'string': return `Json.toStrMatrix(${expr})`
             case 'double': return `Json.toDoubleMatrix(${expr})`
           }
@@ -916,6 +933,9 @@ function cppBuildHelpers(problem: Problem): string {
   needs.add('_vbool')
   needs.add('_vstr')
   needs.add('_vvint')
+  needs.add('_vchar')
+  needs.add('_vvchar')
+  needs.add('_vvstr')
 
   let helpers = ''
   if (needs.has('_vint')) helpers += `
@@ -928,6 +948,14 @@ vector<bool> _vbool(const JVal& v){ vector<bool> r; for(auto&x:v.arr) r.push_bac
 vector<string> _vstr(const JVal& v){ vector<string> r; for(auto&x:v.arr) r.push_back(x.asStr()); return r; }`
   if (needs.has('_vvint')) helpers += `
 vector<vector<int>> _vvint(const JVal& v){ vector<vector<int>> r; for(auto&x:v.arr){ vector<int> row; for(auto&y:x.arr) row.push_back(y.asInt()); r.push_back(row); } return r; }`
+  // char / character：力扣里字符矩阵写作 character[][]
+  if (needs.has('_vchar')) helpers += `
+char _ch(const JVal& v){ if(v.t==JVal::STR) { string s=v.asStr(); return s.empty() ? '\\0' : s[0]; } return (char)v.asInt(); }
+vector<char> _vchar(const JVal& v){ vector<char> r; for(auto&x:v.arr) r.push_back(_ch(x)); return r; }`
+  if (needs.has('_vvchar')) helpers += `
+vector<vector<char>> _vvchar(const JVal& v){ vector<vector<char>> r; for(auto&x:v.arr){ vector<char> row; for(auto&y:x.arr) row.push_back(_ch(y)); r.push_back(row); } return r; }`
+  if (needs.has('_vvstr')) helpers += `
+vector<vector<string>> _vvstr(const JVal& v){ vector<vector<string>> r; for(auto&x:v.arr){ vector<string> row; for(auto&y:x.arr) row.push_back(y.asStr()); r.push_back(row); } return r; }`
 
   return helpers
 }
@@ -1050,6 +1078,7 @@ function cppLoadArg(shape: Shape, expr: string): string {
         case 'int': return `(${expr}).asInt()`
         case 'double': return `(${expr}).asDouble()`
         case 'bool': return `(${expr}).asBool()`
+        case 'char': return `_ch(${expr})`
         case 'string': return `(${expr}).asStr()`
       }
       break
@@ -1060,7 +1089,15 @@ function cppLoadArg(shape: Shape, expr: string): string {
           case 'int': return `_vint(${expr})`
           case 'double': return `_vdbl(${expr})`
           case 'bool': return `_vbool(${expr})`
+          case 'char': return `_vchar(${expr})`
           case 'string': return `_vstr(${expr})`
+        }
+      }
+      if (inner.kind === 'list' && inner.item.kind === 'scalar') {
+        switch (inner.item.base) {
+          case 'int': return `_vvint(${expr})`
+          case 'char': return `_vvchar(${expr})`
+          case 'string': return `_vvstr(${expr})`
         }
       }
       return `_vvint(${expr})`
@@ -1086,6 +1123,7 @@ ListNode* _lcFindList(ListNode* h, int v){ while(h){ if(h->val==v) return h; h=h
 const CPP_SERIALIZER = `
 string _ser(const string& s){ string r="\\""; for(char c:s){ if(c=='"'||c=='\\\\') r+='\\\\'; r+=c; } return r+"\\""; }
 string _ser(bool b){ return b?"true":"false"; }
+string _ser(char c){ return string("\\"") + c + "\\""; }
 string _ser(int v){ return to_string(v); }
 string _ser(long v){ return to_string(v); }
 string _ser(long long v){ return to_string(v); }

@@ -3,7 +3,7 @@
 // `string[]`, `ListNode`, `TreeNode`, `NestedInteger`.
 
 export type Shape =
-  | { kind: 'scalar'; base: 'int' | 'double' | 'bool' | 'string' }
+  | { kind: 'scalar'; base: 'int' | 'double' | 'bool' | 'string' | 'char' }
   | { kind: 'list'; item: Shape }
   | { kind: 'linkedlist' }
   | { kind: 'tree' }
@@ -16,7 +16,8 @@ export function parseType(type: string): Shape {
   // ListNode / TreeNode
   if (/^listnode$/i.test(t)) return { kind: 'linkedlist' }
   if (/^treenode$/i.test(t)) return { kind: 'tree' }
-  if (/^char$/i.test(t)) return { kind: 'scalar', base: 'string' }
+  // char / character：力扣元数据里字符矩阵写成 character[][]
+  if (/^(char|character)$/i.test(t)) return { kind: 'scalar', base: 'char' }
 
   // detect trailing [] count
   const dims = (t.match(/\[\]/g) || []).length
@@ -38,8 +39,12 @@ export function parseType(type: string): Shape {
       shape = { kind: 'scalar', base: 'bool' }
       break
     case 'string':
-    case 'char':
       shape = { kind: 'scalar', base: 'string' }
+      break
+    // char / character：力扣里字符与字符矩阵写作 char / character[][]
+    case 'char':
+    case 'character':
+      shape = { kind: 'scalar', base: 'char' }
       break
     case 'list':
       shape = { kind: 'scalar', base: 'string' }
@@ -61,6 +66,8 @@ export function shapeToCanonical(shape: Shape): string {
           return 'double'
         case 'bool':
           return 'boolean'
+        case 'char':
+          return 'character'
         case 'string':
           return 'string'
       }
