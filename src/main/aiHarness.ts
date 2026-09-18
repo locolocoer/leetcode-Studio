@@ -250,7 +250,7 @@ export function initAiHarnessCache(dataDir: string): void {
   }
 }
 
-/** 题目 + 语言 + 签名的哈希：本地缓存与共享模板库都用它做 key */
+/** 题目 + 语言 + 签名的哈希：本地缓存与共享模板库都用它做 key（取绝对值，避免出现 `1-cpp--700170664` 这种双横线 key） */
 export function harnessSigHash(problem: Problem): string {
   const sig = JSON.stringify({
     p: problem.params,
@@ -262,7 +262,7 @@ export function harnessSigHash(problem: Problem): string {
   })
   let h = 0
   for (let i = 0; i < sig.length; i++) h = (h * 31 + sig.charCodeAt(i)) | 0
-  return String(h)
+  return String(Math.abs(h))
 }
 
 function cacheKey(problem: Problem, language: Language): string {

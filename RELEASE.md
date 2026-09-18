@@ -1,14 +1,22 @@
-# LeetCode Studio 1.1.19 发布说明
+# LeetCode Studio 1.1.20 发布说明
 
 本地 LeetCode 刷题桌面应用：多语言编译运行、逐步调试、查看题解、AI 引导、账号登录与一键提交。
 所有编译器与运行时已内置于安装包，**无需另外安装 Python / JDK / GCC**。
 
-- 版本：1.1.19
+- 版本：1.1.20
 - 平台：Windows 10 / 11（x64）
 - 仓库：<https://github.com/locolocoer/leetcode-Studio>
 - 下载：<https://github.com/locolocoer/leetcode-Studio/releases>
 
-## 本版更新（1.1.19）
+## 本版更新（1.1.20）
+
+**更新镜像与共享模板库迁到新位置**
+
+- 对象存储位置改为桶 `fryappstore`（cn-beijing）下的 `leetcodestudio/` 目录：`latest*.yml` 在目录根部作为更新指针，安装包按 `v<版本>/` 归档，共享模板在 `leetcodestudio/harness/shared/`。客户端与发布流程已同步指向新位置。
+- **检查更新更稳**：以前只有镜像请求**报错**才会回退 GitHub Releases；现在镜像里没有更新版本时，也会再去 GitHub Releases 确认一遍，只有两边都没有新版本才算真的最新 —— 镜像同步滞后不会再让新版本被漏掉。
+- **迁移期兼容**：发布时仍会往旧镜像位置放一份只含几十字节的更新指针，让 1.1.19 及更早、只认旧地址的安装包也能发现并升级到本版。
+
+### 1.1.19
 
 **共享判题模板库：一个人修好，所有人受益**
 
@@ -106,8 +114,8 @@
 
 | 文件 | 大小 | 说明 |
 | --- | --- | --- |
-| `LeetCode-Studio-1.1.19-setup.exe` | ≈172 MB | 安装版（推荐）：可自选目录、创建快捷方式、支持自动更新 |
-| `LeetCode-Studio-1.1.19-portable.exe` | ≈172 MB | 免安装便携版：双击即用（首次启动需解压内置工具链到临时目录，约 1 分钟） |
+| `LeetCode-Studio-1.1.20-setup.exe` | ≈172 MB | 安装版（推荐）：可自选目录、创建快捷方式、支持自动更新 |
+| `LeetCode-Studio-1.1.20-portable.exe` | ≈172 MB | 免安装便携版：双击即用（首次启动需解压内置工具链到临时目录，约 1 分钟） |
 | `latest.yml` | — | 自动更新元数据（electron-builder 生成，随 Release 发布，含安装包 sha512） |
 
 > 文件名不带空格，确保自动更新的 `latest.yml` 与实际文件名一致。
@@ -157,7 +165,7 @@
 ## 自动更新
 
 - 基于 `electron-updater`：启动 8 秒后自动检查更新，**自动后台下载**，退出时自动安装；下载完成时主界面弹出提示条，可「重启并安装」。
-- 默认更新源为 **GitHub Releases**；也支持自建镜像（对象存储 / CDN）加速分发，配置后优先走镜像、失败自动回退 GitHub。镜像地址通过环境变量 `LC_UPDATE_MIRROR` 指定。
+- 默认更新源为 **GitHub Releases**；同时把产物镜像到对象存储加速国内分发，地址为 `https://fryappstore.oss-cn-beijing.aliyuncs.com/leetcodestudio/`。应用优先走镜像，镜像报错或镜像里没有更新版本时会再去 GitHub Releases 确认，两边都没有新版本才算真的最新。镜像地址可用环境变量 `LC_UPDATE_MIRROR` 覆盖。
 
 ## 发布流程
 
@@ -172,7 +180,7 @@ GitHub Actions（`.github/workflows/main.yml`）：
 
 1. **Test**（ubuntu）：`npm ci` + 类型检查 + 构建 — push main / PR 时运行
 2. **Build windows installer**（windows-latest）：下载/裁剪内置工具链（带缓存）→ 构建 → `electron-builder --win` → 上传安装包 + `latest.yml`
-3. **Release**（仅 tag）：下载产物 → 创建 GitHub Release（自动生成 release notes）；如配置了对象存储密钥，会同时把产物同步到镜像站（`latest*.yml` 保留在根目录作为稳定的更新指针，其余按 `v<版本>/` 归档）
+3. **Release**（仅 tag）：下载产物 → 创建 GitHub Release（自动生成 release notes）；如配置了对象存储密钥，会把产物同步到 `oss://fryappstore/leetcodestudio/`（`latest*.yml` 留在该目录根部作为稳定更新指针，其余按 `v<版本>/` 归档），并往旧镜像位置写一份指向新地址的更新指针供老客户端升级
 
 ## 已知限制
 

@@ -127,15 +127,18 @@ jobs:
         env:
           OSS_ACCESS_KEY_ID: ${{ secrets.OSS_ACCESS_KEY_ID }}
           OSS_ACCESS_KEY_SECRET: ${{ secrets.OSS_ACCESS_KEY_SECRET }}
-          OSS_BUCKET: ${{ vars.OSS_BUCKET || 'leetcode-studio' }}
-          OSS_ENDPOINT: ${{ vars.OSS_ENDPOINT || 'oss-cn-beijing.aliyuncs.com' }}
+          # 镜像位置：桶 fryappstore（cn-beijing）下的 leetcodestudio/ 目录。
+          # 与客户端 src/main/harnessRegistry.ts 的 OSS_BASE 对应，改动必须两处同步。
+          OSS_BUCKET: fryappstore
+          OSS_ENDPOINT: oss-cn-beijing.aliyuncs.com
+          OSS_PREFIX: leetcodestudio
         run: |
           set -e
           curl -sL https://gosspublic.alicdn.com/ossutil/1.7.18/ossutil64 -o ossutil
           chmod +x ossutil
           ./ossutil config -e "$OSS_ENDPOINT" -i "$OSS_ACCESS_KEY_ID" -k "$OSS_ACCESS_KEY_SECRET"
-          ./ossutil cp -rf harness/shared/ "oss://${OSS_BUCKET}/harness/shared/" --acl public-read
-          echo "✓ 共享模板已同步到 oss://${OSS_BUCKET}/harness/shared/"
+          ./ossutil cp -rf harness/shared/ "oss://${OSS_BUCKET}/${OSS_PREFIX}/harness/shared/" --acl public-read
+          echo "✓ 共享模板已同步到 oss://${OSS_BUCKET}/${OSS_PREFIX}/harness/shared/"
 
   # ---------------------------------------------------------------- 发布
   release:
@@ -169,8 +172,11 @@ jobs:
         env:
           OSS_ACCESS_KEY_ID: ${{ secrets.OSS_ACCESS_KEY_ID }}
           OSS_ACCESS_KEY_SECRET: ${{ secrets.OSS_ACCESS_KEY_SECRET }}
-          OSS_BUCKET: ${{ vars.OSS_BUCKET || 'leetcode-studio' }}
-          OSS_ENDPOINT: ${{ vars.OSS_ENDPOINT || 'oss-cn-beijing.aliyuncs.com' }}
+          # 镜像位置：桶 fryappstore（cn-beijing）下的 leetcodestudio/ 目录。
+          # 与客户端 src/main/index.ts 的 UPDATE_MIRROR_DEFAULT 对应，改动必须两处同步。
+          OSS_BUCKET: fryappstore
+          OSS_ENDPOINT: oss-cn-beijing.aliyuncs.com
+          OSS_PREFIX: leetcodestudio
         run: |
           set -e
           curl -sL https://gosspublic.alicdn.com/ossutil/1.7.18/ossutil64 -o ossutil
@@ -178,7 +184,7 @@ jobs:
           ./ossutil config -e "$OSS_ENDPOINT" -i "$OSS_ACCESS_KEY_ID" -k "$OSS_ACCESS_KEY_SECRET"
           VERSION="${GITHUB_REF_NAME#v}"
           mkdir -p "artifacts/v${VERSION}"
-          # latest*.yml 留在根目录作为稳定的更新指针，其余产物按版本归档
+          # latest*.yml 留在镜像根目录作为稳定的更新指针，其余产物按版本归档
           for f in artifacts/*; do
             [ -d "$f" ] && continue
             case "$(basename "$f")" in
@@ -191,20 +197,45 @@ jobs:
             sed -i -E "s#(url|path): #\1: v${VERSION}/#" "$yml"
           done
           # --acl public-read：客户端用匿名 GET 下载更新，对象必须可公开读取
-          if ! ./ossutil cp -rf artifacts/ "oss://${OSS_BUCKET}/" --acl public-read; then
-            echo "::error::镜像上传失败：请确认 AccessKey 对桶 ${OSS_BUCKET} 有写权限，且桶允许对象被匿名读取（客户端需要匿名 GET）。"
+          if ! ./ossutil cp -rf artifacts/ "oss://${OSS_BUCKET}/${OSS_PREFIX}/" --acl public-read; then
+            echo "::error::镜像上传失败：请确认 AccessKey 对桶 ${OSS_BUCKET} 的 ${OSS_PREFIX}/ 目录有写权限，且桶允许对象被匿名读取（客户端需要匿名 GET）。"
             exit 1
           fi
+
+      # 迁移期兼容：只认旧桶更新源、且不会在“镜像无新版本”时改问 GitHub 的老客户端（≤ 1.1.19），
+      # 拿不到新桶里的 latest.yml 就再也不会自动升级。这里往旧桶放一份指向新桶的绝对地址更新指针，
+      # 只占几十字节，不重复上传安装包。确认没有老客户端在跑之后，本步骤可以删掉。
+      - name: Publish legacy mirror pointer
+        if: env.OSS_ACCESS_KEY_ID != ''
+        continue-on-error: true
+        env:
+          OSS_ACCESS_KEY_ID: ${{ secrets.OSS_ACCESS_KEY_ID }}
+          OSS_ACCESS_KEY_SECRET: ${{ secrets.OSS_ACCESS_KEY_SECRET }}
+          OSS_BUCKET: fryappstore
+          OSS_ENDPOINT: oss-cn-beijing.aliyuncs.com
+          OSS_PREFIX: leetcodestudio
+          LEGACY_BUCKET: leetcode-studio
+        run: |
+          set -e
+          curl -sL https://gosspublic.alicdn.com/ossutil/1.7.18/ossutil64 -o ossutil
+          chmod +x ossutil
+          ./ossutil config -e "$OSS_ENDPOINT" -i "$OSS_ACCESS_KEY_ID" -k "$OSS_ACCESS_KEY_SECRET"
+          mkdir -p legacy
+          for yml in artifacts/latest*.yml; do
+            [ -f "$yml" ] || continue
+            sed -E "s#(url|path): #\1: https://${OSS_BUCKET}.${OSS_ENDPOINT}/${OSS_PREFIX}/#" "$yml" > "legacy/$(basename "$yml")"
+          done
+          ./ossutil cp -rf legacy/ "oss://${LEGACY_BUCKET}/" --acl public-read
 
       # 镜像源必须匿名可读，否则客户端下载 403；无论上传是否成功都探活，尽早暴露权限问题
       - name: Verify mirror feed is publicly readable
         if: always() && env.OSS_ACCESS_KEY_ID != ''
         env:
-          OSS_ACCESS_KEY_ID: ${{ secrets.OSS_ACCESS_KEY_ID }}
-          OSS_BUCKET: ${{ vars.OSS_BUCKET || 'leetcode-studio' }}
-          OSS_ENDPOINT: ${{ vars.OSS_ENDPOINT || 'oss-cn-beijing.aliyuncs.com' }}
+          OSS_BUCKET: fryappstore
+          OSS_ENDPOINT: oss-cn-beijing.aliyuncs.com
+          OSS_PREFIX: leetcodestudio
         run: |
-          URL="https://${OSS_BUCKET}.${OSS_ENDPOINT}/latest.yml"
+          URL="https://${OSS_BUCKET}.${OSS_ENDPOINT}/${OSS_PREFIX}/latest.yml"
           echo "check $URL"
           CODE=$(curl -s -o /tmp/latest.yml -w '%{http_code}' "$URL" || echo 000)
           echo "HTTP $CODE"

@@ -16,7 +16,7 @@ import { putSharedHarness } from './aiHarness'
 //   harness/shared/<key>.json        单个模板（key = <题目 id>:<语言>:<签名哈希>）
 // ---------------------------------------------------------------------------
 
-const OSS_BASE = 'https://leetcode-studio.oss-cn-beijing.aliyuncs.com/harness/shared/'
+const OSS_BASE = 'https://fryappstore.oss-cn-beijing.aliyuncs.com/leetcodestudio/harness/shared/'
 const GH_REPO = 'locolocoer/leetcode-Studio'
 const GH_RAW = `https://raw.githubusercontent.com/${GH_REPO}/main/harness/shared/`
 const GH_API = 'https://api.github.com'

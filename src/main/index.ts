@@ -36,7 +36,8 @@ let lc: LeetCodeClient
 // ---------------------------------------------------------------- 自动更新
 // 更新源：默认 GitHub Releases；若配置了镜像（LC_UPDATE_MIRROR，例如自建对象存储/CDN），
 // 优先走镜像，失败自动回退到 GitHub Releases。
-const UPDATE_MIRROR_DEFAULT = 'https://leetcode-studio.oss-cn-beijing.aliyuncs.com/'
+// 镜像目录：桶 fryappstore（cn-beijing）下的 leetcodestudio/，对象需允许匿名读取。
+const UPDATE_MIRROR_DEFAULT = 'https://fryappstore.oss-cn-beijing.aliyuncs.com/leetcodestudio/'
 const UPDATE_MIRROR = (process.env.LC_UPDATE_MIRROR || UPDATE_MIRROR_DEFAULT).trim()
 const GH_OWNER = 'locolocoer'
 const GH_REPO = 'leetcode-Studio'
@@ -53,9 +54,12 @@ function logUpdater(msg: string): void {
 }
 
 let currentFeed: 'mirror' | 'github' = 'mirror'
+/** 本轮检查是否已经问过 GitHub：镜像与 GitHub 都只是“一个源”，镜像滞后时要用 GitHub 兜底 */
+let githubChecked = false
 
 function useMirrorFeed(): void {
   currentFeed = 'mirror'
+  githubChecked = false
   autoUpdater.setFeedURL({ provider: 'generic', url: UPDATE_MIRROR })
 }
 
@@ -83,6 +87,15 @@ function setupAutoUpdater(): void {
     sendUpdateStatus({ state: 'available', version: info.version })
   })
   autoUpdater.on('update-not-available', () => {
+    // 镜像里的 latest.yml 可能滞后（镜像目录搬迁、对象还没同步完都会造成）。
+    // 镜像说“已是最新”时再问一次 GitHub Releases，两边都没有新版本才算真的最新。
+    if (currentFeed === 'mirror' && !githubChecked) {
+      githubChecked = true
+      logUpdater('镜像未发现新版本，再向 GitHub Releases 确认一次')
+      useGitHubFeed()
+      autoUpdater.checkForUpdates().catch(() => sendUpdateStatus({ state: 'not-available' }))
+      return
+    }
     logUpdater('已是最新版本')
     sendUpdateStatus({ state: 'not-available' })
   })
@@ -98,6 +111,7 @@ function setupAutoUpdater(): void {
     if (currentFeed === 'mirror') {
       // 镜像未配置 / 网络不通 → 回退到 GitHub Releases
       console.log(`[Updater] 镜像源失败，回退到 GitHub Releases：${msg}`)
+      githubChecked = true
       useGitHubFeed()
       logUpdater('回退到 GitHub Release')
       autoUpdater.checkForUpdates().catch(() => sendUpdateStatus({ state: 'error', message: msg }))

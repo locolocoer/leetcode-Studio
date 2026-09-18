@@ -120,7 +120,7 @@ AI 生成的代码只承担驱动职责，并受这些约束：不能修改解�
 
 内置模板不适配的题，AI 生成一次就够了——把它共享出去，别人遇到同一道题（同一语言、同一函数签名）就不用再等 AI 现生成。
 
-- **拉取**：完全自动。上面的第 4 步会按 `题目 id + 语言 + 签名哈希` 去 `harness/shared/index.json` 找条目，先请求 OSS 镜像 `leetcode-studio.oss-cn-beijing.aliyuncs.com/harness/shared/`，失败再回退 `raw.githubusercontent.com`，两条路都拿不到就继续走第 5 步。
+- **拉取**：完全自动。上面的第 4 步会按 `题目 id + 语言 + 签名哈希` 去 `harness/shared/index.json` 找条目，先请求 OSS 镜像 `fryappstore.oss-cn-beijing.aliyuncs.com/leetcodestudio/harness/shared/`，失败再回退 `raw.githubusercontent.com`，两条路都拿不到就继续走第 5 步。
 - **发布**：在「🧩 查看/编辑模板」弹窗里，模板**通过本题全部用例**之后点「发布到共享库」。
   - 设置页填了 GitHub Token（`contents: write`）时直接通过 Contents API 提交 `harness/shared/<key>.json` 并更新索引，无需手动操作。
   - 没填 Token 时会导出到 `<用户数据目录>/.runtime/harness-publish/<key>.json`，把它连同更新后的 `index.json` 一起提交到仓库即可。
@@ -202,11 +202,13 @@ git tag v1.1.14 && git push origin main --tags
 
 1. **test**：`npm ci` + 类型检查 + 构建（push 与 PR 时都跑）
 2. **build**（windows-latest）：准备内置工具链 → 构建 → `electron-builder --win` 产出安装包与 `latest.yml` → 上传产物
-3. **release**（仅 tag）：下载产物 → 创建 GitHub Release
+3. **release**（仅 tag）：下载产物 → 创建 GitHub Release → 同步到对象存储镜像并探活（匿名可读）
 
 客户端使用 `electron-updater`：启动后自动检查、后台下载、退出时安装；设置页「关于与更新」可手动检查与重启安装。
-默认更新源是 **GitHub Releases**；也支持指向自建镜像（对象存储 / CDN）以加速分发 —— 若配置了镜像，
-应用会优先走镜像，失败自动回退 GitHub。要换镜像地址，设置环境变量 `LC_UPDATE_MIRROR` 即可（见 `src/main/index.ts`）。
+默认更新源是 **GitHub Releases**；同时把产物镜像到对象存储加速国内分发 ——
+镜像地址为 `fryappstore.oss-cn-beijing.aliyuncs.com/leetcodestudio/`（`latest*.yml` 在目录根部，安装包按 `v<版本>/` 归档）。
+应用优先走镜像；**镜像报错或镜像里没有更新版本时，都会再去 GitHub Releases 确认一遍**，只有两边都没有新版本才算真的最新。
+要换镜像地址，设置环境变量 `LC_UPDATE_MIRROR` 即可（见 `src/main/index.ts`）。
 调试更新问题时可以看 `<用户数据目录>/.runtime/updater.log`。
 
 ## 📄 License
