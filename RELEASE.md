@@ -1,14 +1,19 @@
-# LeetCode Studio 1.1.20 发布说明
+# LeetCode Studio 1.1.21 发布说明
 
 本地 LeetCode 刷题桌面应用：多语言编译运行、逐步调试、查看题解、AI 引导、账号登录与一键提交。
 所有编译器与运行时已内置于安装包，**无需另外安装 Python / JDK / GCC**。
 
-- 版本：1.1.20
+- 版本：1.1.21
 - 平台：Windows 10 / 11（x64）
 - 仓库：<https://github.com/locolocoer/leetcode-Studio>
 - 下载：<https://github.com/locolocoer/leetcode-Studio/releases>
 
-## 本版更新（1.1.20）
+## 本版更新（1.1.21）
+
+- 修复「镜像里没有更新版本时再去 GitHub Releases 确认」这条兜底路径：上一次检查还没结束就发起新检查时，会被直接忽略，导致兜底实际没生效；现在改为等本轮检查结束后再查，并在日志里留下记录。
+- 顺带把共享库条目的文件名规整了：题号 + 语言 + 签名哈希之间统一用 `-` 连接（此前哈希为负数时会多出一个横线，例如 `1-cpp--700170664` → `1-cpp-700170664`）。
+
+### 1.1.20
 
 **更新镜像与共享模板库迁到新位置**
 
@@ -114,8 +119,8 @@
 
 | 文件 | 大小 | 说明 |
 | --- | --- | --- |
-| `LeetCode-Studio-1.1.20-setup.exe` | ≈172 MB | 安装版（推荐）：可自选目录、创建快捷方式、支持自动更新 |
-| `LeetCode-Studio-1.1.20-portable.exe` | ≈172 MB | 免安装便携版：双击即用（首次启动需解压内置工具链到临时目录，约 1 分钟） |
+| `LeetCode-Studio-1.1.21-setup.exe` | ≈172 MB | 安装版（推荐）：可自选目录、创建快捷方式、支持自动更新 |
+| `LeetCode-Studio-1.1.21-portable.exe` | ≈172 MB | 免安装便携版：双击即用（首次启动需解压内置工具链到临时目录，约 1 分钟） |
 | `latest.yml` | — | 自动更新元数据（electron-builder 生成，随 Release 发布，含安装包 sha512） |
 
 > 文件名不带空格，确保自动更新的 `latest.yml` 与实际文件名一致。

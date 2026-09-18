@@ -93,7 +93,14 @@ function setupAutoUpdater(): void {
       githubChecked = true
       logUpdater('镜像未发现新版本，再向 GitHub Releases 确认一次')
       useGitHubFeed()
-      autoUpdater.checkForUpdates().catch(() => sendUpdateStatus({ state: 'not-available' }))
+      // 必须等这一轮检查彻底结束再发起下一次：checkForUpdates 在“已有检查进行中”时会直接复用旧结果。
+      setTimeout(() => {
+        autoUpdater.checkForUpdates().catch((err) => {
+          const m = err && err.message ? err.message : String(err)
+          logUpdater(`GitHub Releases 检查失败：${m}`)
+          sendUpdateStatus({ state: 'error', message: m })
+        })
+      }, 100)
       return
     }
     logUpdater('已是最新版本')
