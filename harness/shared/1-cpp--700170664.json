@@ -1,0 +1,11 @@
+{
+  "key": "1-cpp--700170664",
+  "language": "cpp",
+  "sigHash": "-700170664",
+  "problemId": "1",
+  "slug": "two-sum",
+  "title": "两数之和",
+  "author": "feng-yao-3",
+  "createdAt": "2026-09-18T13:14:30.467Z",
+  "code": "int main(){\n  string raw; { char c; while(cin.get(c)) raw += c; }\n  vector<string> argvRaw; { string line; stringstream ss(raw); while(getline(ss, line)) { if(!line.empty()) argvRaw.push_back(line); } }\n  auto _a0 = _vint(JVal::parse(argvRaw[0]));\n  auto _a1 = (JVal::parse(argvRaw[1])).asInt();\n  Solution obj;\n  auto result = obj.twoSum(_a0, _a1);\n  cout << _ser(result);\n  return 0;\n}"
+}
