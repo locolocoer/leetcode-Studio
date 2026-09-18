@@ -1,6 +1,17 @@
 {
   "version": 1,
-  "updatedAt": "2026-01-01T00:00:00.000Z",
+  "updatedAt": "2026-09-18T13:14:32.657Z",
   "note": "共享判题模板库索引。条目文件放在同目录下 <key>.json，key = <题目id>:<语言>:<签名哈希>。应用会在内置模板不适配时自动从这里（OSS 优先、GitHub 兜底）拉取并本地验证。",
-  "entries": []
+  "entries": [
+    {
+      "key": "1-cpp--700170664",
+      "problemId": "1",
+      "slug": "two-sum",
+      "title": "两数之和",
+      "language": "cpp",
+      "sigHash": "-700170664",
+      "author": "feng-yao-3",
+      "createdAt": "2026-09-18T13:14:30.467Z"
+    }
+  ]
 }
