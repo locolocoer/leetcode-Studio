@@ -1,0 +1,11 @@
+{
+  "key": "236-cpp-2012611589",
+  "language": "cpp",
+  "sigHash": "2012611589",
+  "problemId": "236",
+  "slug": "lowest-common-ancestor-of-a-binary-tree",
+  "title": "二叉树的最近公共祖先",
+  "author": "feng-yao-3",
+  "createdAt": "2026-09-19T00:11:36.775Z",
+  "code": "int main(){\n  string raw; { char c; while(cin.get(c)) raw += c; }\n  vector<string> argvRaw; { string line; stringstream ss(raw); while(getline(ss, line)) { if(!line.empty()) argvRaw.push_back(line); } }\n  auto _a0 = _treenode(JVal::parse(argvRaw[0]));\n  auto _a1 = _lcFindTree(_a0, JVal::parse(argvRaw[1]).asInt());\n  auto _a2 = _lcFindTree(_a0, JVal::parse(argvRaw[2]).asInt());\n  Solution obj;\n  auto result = obj.lowestCommonAncestor(_a0, _a1, _a2);\n  cout << (result ? to_string(result->val) : string(\"null\"));\n  return 0;\n}"
+}
