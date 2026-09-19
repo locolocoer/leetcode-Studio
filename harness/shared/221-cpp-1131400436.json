@@ -1,0 +1,11 @@
+{
+  "key": "221-cpp-1131400436",
+  "language": "cpp",
+  "sigHash": "1131400436",
+  "problemId": "221",
+  "slug": "maximal-square",
+  "title": "最大正方形",
+  "author": "feng-yao-3",
+  "createdAt": "2026-09-19T00:12:15.765Z",
+  "code": "int main(){\n  string raw; { char c; while(cin.get(c)) raw += c; }\n  vector<string> argvRaw; { string line; stringstream ss(raw); while(getline(ss, line)) { if(!line.empty()) argvRaw.push_back(line); } }\n  auto _a0 = _vvchar(JVal::parse(argvRaw[0]));\n  Solution obj;\n  auto result = obj.maximalSquare(_a0);\n  cout << _ser(result);\n  return 0;\n}"
+}
