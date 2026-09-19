@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "updatedAt": "2026-09-19T00:11:16.032Z",
+  "updatedAt": "2026-09-19T00:11:29.102Z",
   "note": "共享判题模板库索引。条目文件放在同目录下 <key>.json，key = <题目id>-<语言>-<签名哈希>。应用会在内置模板不适配时自动从这里（OSS 优先、GitHub 兜底）拉取并本地验证。",
   "entries": [
     {
@@ -22,6 +22,16 @@
       "sigHash": "181402476",
       "author": "feng-yao-3",
       "createdAt": "2026-09-19T00:11:13.458Z"
+    },
+    {
+      "key": "160-cpp-299099765",
+      "problemId": "160",
+      "slug": "intersection-of-two-linked-lists",
+      "title": "相交链表",
+      "language": "cpp",
+      "sigHash": "299099765",
+      "author": "feng-yao-3",
+      "createdAt": "2026-09-19T00:11:24.641Z"
     }
   ]
 }
