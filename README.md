@@ -177,6 +177,16 @@ node .tmp-t/scripts/record-test.js
 
 > 这些脚本不需要网络或 API Key（`ai-harness-test.ts` 使用打桩模型）。
 
+另有一个需要真实窗口的界面回归，用于守住「栅格/弹性项忘了 `min-width: 0`，导致窗口最大化后还原时整页被撑宽」这类纯逻辑测不到的布局问题：
+
+```bash
+# 先用调试端口启动应用（安装版或 release/win-unpacked 里的 exe 都可以）
+"…\LeetCode Studio.exe" --remote-debugging-port=9222
+node scripts/ui-layout-check.mjs 9222
+```
+
+它会连续做两轮「最大化 → 还原」，比对右栏与编辑器的宽度是否回到基准、整页有没有横向溢出、顶栏按钮有没有跑到可视区外，最后再把视口压到最小窗口宽度复核一次。
+
 ## 📦 内置工具链
 
 工具链不入库，由 `npm run toolchains` 按固定版本下载并裁剪，打包时作为资源一起分发：

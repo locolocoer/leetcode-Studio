@@ -374,7 +374,9 @@ body {
 }
 
 /* ============================ 右：编辑器 ============================ */
-.right-pane { display: flex; flex-direction: column; min-height: 0; background: var(--bg-1); }
+/* min-width: 0 必须留着：默认的 min-width: auto 会让这一列以「Monaco 当前宽度」为下限，
+   窗口从最大化还原时整页被撑宽（右侧按钮跑到可视区外），编辑器也不会跟着变窄。 */
+.right-pane { display: flex; flex-direction: column; min-height: 0; min-width: 0; background: var(--bg-1); }
 .editor-head {
   display: flex; align-items: center; gap: 10px; padding: 7px 12px;
   background: var(--bg-1); border-bottom: 1px solid var(--border); font-size: 12px; color: var(--text-dim);
