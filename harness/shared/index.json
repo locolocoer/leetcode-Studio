@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "updatedAt": "2026-09-18T13:30:00.000Z",
+  "updatedAt": "2026-09-19T00:11:16.032Z",
   "note": "共享判题模板库索引。条目文件放在同目录下 <key>.json，key = <题目id>-<语言>-<签名哈希>。应用会在内置模板不适配时自动从这里（OSS 优先、GitHub 兜底）拉取并本地验证。",
   "entries": [
     {
@@ -12,6 +12,16 @@
       "sigHash": "700170664",
       "author": "feng-yao-3",
       "createdAt": "2026-09-18T13:14:30.467Z"
+    },
+    {
+      "key": "15-cpp-181402476",
+      "problemId": "15",
+      "slug": "3sum",
+      "title": "三数之和",
+      "language": "cpp",
+      "sigHash": "181402476",
+      "author": "feng-yao-3",
+      "createdAt": "2026-09-19T00:11:13.458Z"
     }
   ]
 }
