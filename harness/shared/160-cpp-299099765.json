@@ -1,0 +1,11 @@
+{
+  "key": "160-cpp-299099765",
+  "language": "cpp",
+  "sigHash": "299099765",
+  "problemId": "160",
+  "slug": "intersection-of-two-linked-lists",
+  "title": "相交链表",
+  "author": "feng-yao-3",
+  "createdAt": "2026-09-19T00:11:24.641Z",
+  "code": "int main(){\n  string raw; { char c; while(cin.get(c)) raw += c; }\n  vector<string> L; { string line; stringstream ss(raw); while(getline(ss, line)) { if(!line.empty()) L.push_back(line); } }\n  int _iv = JVal::parse(L[0]).asInt();\n  vector<int> _A = _vint(JVal::parse(L[1]));\n  vector<int> _B = _vint(JVal::parse(L[2]));\n  int _sa = JVal::parse(L[3]).asInt();\n  int _sb = JVal::parse(L[4]).asInt();\n  ListNode* headA = _buildList(_A);\n  ListNode* headB = nullptr;\n  if (_iv != 0) {\n    ListNode* shared = _nodeAt(headA, _sa);\n    if (_sb <= 0) { headB = shared; }\n    else {\n      headB = _buildList(_B);\n      ListNode* t = _nodeAt(headB, _sb - 1);\n      if (t) t->next = shared;\n    }\n  } else {\n    headB = _buildList(_B);\n  }\n  Solution obj;\n  auto r = obj.getIntersectionNode(headA, headB);\n  cout << (r ? to_string(r->val) : string(\"0\"));\n  return 0;\n}"
+}
