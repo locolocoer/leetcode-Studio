@@ -1,0 +1,11 @@
+{
+  "key": "234-cpp-1571627999",
+  "language": "cpp",
+  "sigHash": "1571627999",
+  "problemId": "234",
+  "slug": "palindrome-linked-list",
+  "title": "回文链表",
+  "author": "feng-yao-3",
+  "createdAt": "2026-09-19T00:11:48.778Z",
+  "code": "int main(){\n  string raw; { char c; while(cin.get(c)) raw += c; }\n  vector<string> argvRaw; { string line; stringstream ss(raw); while(getline(ss, line)) { if(!line.empty()) argvRaw.push_back(line); } }\n  auto _a0 = _listnode(JVal::parse(argvRaw[0]));\n  Solution obj;\n  auto result = obj.isPalindrome(_a0);\n  cout << _ser(result);\n  return 0;\n}"
+}
