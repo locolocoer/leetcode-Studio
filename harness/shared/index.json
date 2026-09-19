@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "updatedAt": "2026-09-19T00:11:39.294Z",
+  "updatedAt": "2026-09-19T00:11:52.032Z",
   "note": "共享判题模板库索引。条目文件放在同目录下 <key>.json，key = <题目id>-<语言>-<签名哈希>。应用会在内置模板不适配时自动从这里（OSS 优先、GitHub 兜底）拉取并本地验证。",
   "entries": [
     {
@@ -42,6 +42,16 @@
       "sigHash": "2012611589",
       "author": "feng-yao-3",
       "createdAt": "2026-09-19T00:11:36.775Z"
+    },
+    {
+      "key": "234-cpp-1571627999",
+      "problemId": "234",
+      "slug": "palindrome-linked-list",
+      "title": "回文链表",
+      "language": "cpp",
+      "sigHash": "1571627999",
+      "author": "feng-yao-3",
+      "createdAt": "2026-09-19T00:11:48.778Z"
     }
   ]
 }
