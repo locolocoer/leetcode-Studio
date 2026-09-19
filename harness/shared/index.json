@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "updatedAt": "2026-09-19T00:11:52.032Z",
+  "updatedAt": "2026-09-19T00:12:02.904Z",
   "note": "共享判题模板库索引。条目文件放在同目录下 <key>.json，key = <题目id>-<语言>-<签名哈希>。应用会在内置模板不适配时自动从这里（OSS 优先、GitHub 兜底）拉取并本地验证。",
   "entries": [
     {
@@ -52,6 +52,16 @@
       "sigHash": "1571627999",
       "author": "feng-yao-3",
       "createdAt": "2026-09-19T00:11:48.778Z"
+    },
+    {
+      "key": "739-cpp-506744333",
+      "problemId": "739",
+      "slug": "daily-temperatures",
+      "title": "每日温度",
+      "language": "cpp",
+      "sigHash": "506744333",
+      "author": "feng-yao-3",
+      "createdAt": "2026-09-19T00:12:00.820Z"
     }
   ]
 }
