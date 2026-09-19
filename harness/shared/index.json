@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "updatedAt": "2026-09-19T00:11:29.102Z",
+  "updatedAt": "2026-09-19T00:11:39.294Z",
   "note": "共享判题模板库索引。条目文件放在同目录下 <key>.json，key = <题目id>-<语言>-<签名哈希>。应用会在内置模板不适配时自动从这里（OSS 优先、GitHub 兜底）拉取并本地验证。",
   "entries": [
     {
@@ -32,6 +32,16 @@
       "sigHash": "299099765",
       "author": "feng-yao-3",
       "createdAt": "2026-09-19T00:11:24.641Z"
+    },
+    {
+      "key": "236-cpp-2012611589",
+      "problemId": "236",
+      "slug": "lowest-common-ancestor-of-a-binary-tree",
+      "title": "二叉树的最近公共祖先",
+      "language": "cpp",
+      "sigHash": "2012611589",
+      "author": "feng-yao-3",
+      "createdAt": "2026-09-19T00:11:36.775Z"
     }
   ]
 }
