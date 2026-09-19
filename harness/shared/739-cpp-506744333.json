@@ -1,0 +1,11 @@
+{
+  "key": "739-cpp-506744333",
+  "language": "cpp",
+  "sigHash": "506744333",
+  "problemId": "739",
+  "slug": "daily-temperatures",
+  "title": "每日温度",
+  "author": "feng-yao-3",
+  "createdAt": "2026-09-19T00:12:00.820Z",
+  "code": "int main(){\n  string raw; { char c; while(cin.get(c)) raw += c; }\n  vector<string> argvRaw; { string line; stringstream ss(raw); while(getline(ss, line)) { if(!line.empty()) argvRaw.push_back(line); } }\n  auto _a0 = _vint(JVal::parse(argvRaw[0]));\n  Solution obj;\n  auto result = obj.dailyTemperatures(_a0);\n  cout << _ser(result);\n  return 0;\n}"
+}
