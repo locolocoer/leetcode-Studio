@@ -1,0 +1,11 @@
+{
+  "key": "215-cpp-2011592115",
+  "language": "cpp",
+  "sigHash": "2011592115",
+  "problemId": "215",
+  "slug": "kth-largest-element-in-an-array",
+  "title": "数组中的第K个最大元素",
+  "author": "feng-yao-3",
+  "createdAt": "2026-09-21T00:57:13.335Z",
+  "code": "int main(){\n  string raw; { char c; while(cin.get(c)) raw += c; }\n  vector<string> argvRaw; { string line; stringstream ss(raw); while(getline(ss, line)) { if(!line.empty()) argvRaw.push_back(line); } }\n  auto _a0 = _vint(JVal::parse(argvRaw[0]));\n  auto _a1 = (JVal::parse(argvRaw[1])).asInt();\n  Solution obj;\n  auto result = obj.findKthLargest(_a0, _a1);\n  cout << _ser(result);\n  return 0;\n}"
+}
