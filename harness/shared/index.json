@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "updatedAt": "2026-09-19T00:12:17.840Z",
+  "updatedAt": "2026-09-21T00:57:15.610Z",
   "note": "共享判题模板库索引。条目文件放在同目录下 <key>.json，key = <题目id>-<语言>-<签名哈希>。应用会在内置模板不适配时自动从这里（OSS 优先、GitHub 兜底）拉取并本地验证。",
   "entries": [
     {
@@ -82,6 +82,16 @@
       "sigHash": "1131400436",
       "author": "feng-yao-3",
       "createdAt": "2026-09-19T00:12:15.765Z"
+    },
+    {
+      "key": "215-cpp-2011592115",
+      "problemId": "215",
+      "slug": "kth-largest-element-in-an-array",
+      "title": "数组中的第K个最大元素",
+      "language": "cpp",
+      "sigHash": "2011592115",
+      "author": "feng-yao-3",
+      "createdAt": "2026-09-21T00:57:13.335Z"
     }
   ]
 }
