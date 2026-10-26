@@ -32,6 +32,9 @@ jobs:
       - name: Typecheck + build
         run: npm run check
 
+      - name: Run pure-node regression tests
+        run: npm test
+
   # ---------------------------------------------------------------- 打包安装包（Windows）
   build:
     name: Build windows installer

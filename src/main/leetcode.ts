@@ -1,6 +1,7 @@
 import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'fs'
 import { join } from 'path'
 import type { AuthStatus, Language, SubmitVerdict } from '../shared/types'
+import { decryptSessionJson, encryptSessionJson } from './secrets'
 
 const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120 Safari/537.36'
 
@@ -28,7 +29,13 @@ export class LeetCodeClient {
   constructor(dataDir: string) {
     this.sessionFile = join(dataDir, 'lc-session.json')
     try {
-      this.jar = JSON.parse(readFileSync(this.sessionFile, 'utf8'))
+      const raw = JSON.parse(readFileSync(this.sessionFile, 'utf8'))
+      // 新格式：整个会话 JSON 加密（{ v:2, enc }）；旧格式是明文，直接读（下次保存时迁移）
+      if (raw && raw.v === 2 && typeof raw.enc === 'string') {
+        this.jar = decryptSessionJson<Record<string, Jar>>(raw.enc) ?? {}
+      } else {
+        this.jar = raw ?? {}
+      }
     } catch {
       this.jar = {}
     }
@@ -36,7 +43,10 @@ export class LeetCodeClient {
 
   private save() {
     mkdirSync(join(this.sessionFile, '..'), { recursive: true })
-    writeFileSync(this.sessionFile, JSON.stringify(this.jar, null, 2), 'utf8')
+    const enc = encryptSessionJson(this.jar)
+    // 加密不可用（如无密钥环的 Linux）时退回明文，保证会话不丢
+    const payload = enc ? { v: 2, enc } : this.jar
+    writeFileSync(this.sessionFile, JSON.stringify(payload, null, 2), 'utf8')
   }
 
   private jarOf(host: string): Jar {

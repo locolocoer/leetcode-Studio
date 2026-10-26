@@ -691,7 +691,13 @@ export default function App() {
                 settings={settings}
                 toolchains={toolchains}
                 updateStatus={updateState}
-                onSave={(s) => { window.api.settings.save(s).then(() => loadAll(s)) }}
+                onSave={(s) => window.api.settings.save(s).then(async () => {
+                  // 重新取回脱敏后的设置（刷新 hasApiKey / hasGithubToken），并顺带重检工具链
+                  const sett = await window.api.settings.get()
+                  setSettings(sett)
+                  if (sett.lastLanguage) setLanguage(sett.lastLanguage)
+                  setToolchains(await window.api.toolchains.detect(sett))
+                }).catch(() => {})}
                 onDetect={(s) => window.api.toolchains.detect(s).then(setToolchains)}
               />
             )}

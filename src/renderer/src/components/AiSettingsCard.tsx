@@ -3,7 +3,7 @@ import type { Settings } from '../../../shared/types'
 
 interface Props {
   settings: Settings
-  onSave: (s: Settings) => void
+  onSave: (s: Settings) => Promise<unknown> | void
 }
 
 const PRESETS: { name: string; baseUrl: string; model: string; note: string }[] = [
@@ -18,35 +18,43 @@ const PRESETS: { name: string; baseUrl: string; model: string; note: string }[] 
 export default function AiSettingsCard({ settings, onSave }: Props) {
   const [baseUrl, setBaseUrl] = useState(settings.aiBaseUrl || 'https://api.deepseek.com')
   const [model, setModel] = useState(settings.aiModel || 'deepseek-chat')
-  const [key, setKey] = useState(settings.aiApiKey || '')
+  // 密钥明文不下发渲染层：输入框始终为空；留空=不变，输入新值=替换
+  const [key, setKey] = useState('')
   const [noAnswer, setNoAnswer] = useState(settings.aiNoAnswer !== false)
   const [autoHarness, setAutoHarness] = useState(settings.autoHarness !== false)
   const [shareHarness, setShareHarness] = useState(settings.shareHarness !== false)
-  const [ghToken, setGhToken] = useState(settings.githubToken || '')
+  const [ghToken, setGhToken] = useState('')
   const [testing, setTesting] = useState(false)
   const [testMsg, setTestMsg] = useState<{ ok: boolean; text: string } | null>(null)
   const [clearMsg, setClearMsg] = useState('')
 
   const save = () => {
     onSave({ ...settings, aiBaseUrl: baseUrl.trim(), aiModel: model.trim(), aiApiKey: key.trim(), aiNoAnswer: noAnswer, autoHarness, shareHarness, githubToken: ghToken.trim() })
+    setKey('')
+    setGhToken('')
   }
 
   const test = async () => {
     setTesting(true)
     setTestMsg(null)
     // 先落盘再自检，保证主进程用的是当前填写的配置
-    onSave({ ...settings, aiBaseUrl: baseUrl.trim(), aiModel: model.trim(), aiApiKey: key.trim(), aiNoAnswer: noAnswer, autoHarness, shareHarness, githubToken: ghToken.trim() })
+    await onSave({ ...settings, aiBaseUrl: baseUrl.trim(), aiModel: model.trim(), aiApiKey: key.trim(), aiNoAnswer: noAnswer, autoHarness, shareHarness, githubToken: ghToken.trim() })
+    setKey('')
+    setGhToken('')
     const r = await window.api.ai.test()
     setTestMsg({ ok: r.ok, text: r.message })
     setTesting(false)
   }
+
+  const clearKey = () => { onSave({ ...settings, clearApiKey: true }); setKey('') }
+  const clearToken = () => { onSave({ ...settings, clearGithubToken: true }); setGhToken('') }
 
   return (
     <div className="setting-card">
       <h3>AI 做题助手</h3>
       <div className="desc">
         接入任意 OpenAI 兼容接口（DeepSeek / OpenAI / Moonshot / 智谱 / 本地 Ollama）。
-        Key 只保存在本机设置文件里，请求由主进程直连，不经过任何第三方中转。
+        Key 只保存在本机（用系统安全存储加密），请求由主进程直连，不经过任何第三方中转。
       </div>
 
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 12 }}>
@@ -69,7 +77,22 @@ export default function AiSettingsCard({ settings, onSave }: Props) {
       </div>
       <div className="setting-row">
         <label>API Key</label>
-        <input type="text" placeholder="sk-…（本地 Ollama 可留空）" value={key} onChange={(e) => setKey(e.target.value)} />
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <input
+            type="password"
+            placeholder={settings.hasApiKey ? '已配置；留空保持不变，输入新值即替换' : 'sk-…（本地 Ollama 可留空）'}
+            value={key}
+            onChange={(e) => setKey(e.target.value)}
+          />
+          {settings.hasApiKey ? (
+            <>
+              <span style={{ color: 'var(--green)', whiteSpace: 'nowrap', fontSize: 12 }}>已配置 ✓</span>
+              <button className="btn sm ghost" style={{ whiteSpace: 'nowrap' }} onClick={clearKey}>清除</button>
+            </>
+          ) : (
+            <span style={{ color: 'var(--text-faint)', whiteSpace: 'nowrap', fontSize: 12 }}>未配置</span>
+          )}
+        </div>
       </div>
       <div className="setting-row">
         <label>严格模式</label>
@@ -112,12 +135,22 @@ export default function AiSettingsCard({ settings, onSave }: Props) {
       </div>
       <div className="setting-row">
         <label>GitHub Token</label>
-        <input
-          type="text"
-          placeholder="发布模板到共享库时需要（只需该仓库 contents 写权限，可留空）"
-          value={ghToken}
-          onChange={(e) => setGhToken(e.target.value)}
-        />
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <input
+            type="password"
+            placeholder={settings.hasGithubToken ? '已配置；留空保持不变，输入新值即替换' : '发布模板到共享库时需要（只需 contents 写权限，可留空）'}
+            value={ghToken}
+            onChange={(e) => setGhToken(e.target.value)}
+          />
+          {settings.hasGithubToken ? (
+            <>
+              <span style={{ color: 'var(--green)', whiteSpace: 'nowrap', fontSize: 12 }}>已配置 ✓</span>
+              <button className="btn sm ghost" style={{ whiteSpace: 'nowrap' }} onClick={clearToken}>清除</button>
+            </>
+          ) : (
+            <span style={{ color: 'var(--text-faint)', whiteSpace: 'nowrap', fontSize: 12 }}>未配置</span>
+          )}
+        </div>
       </div>
 
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>

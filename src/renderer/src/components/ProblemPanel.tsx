@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import DOMPurify from 'dompurify'
 import type { Problem, TestCase } from '../../../shared/types'
 
 interface Props {
@@ -12,13 +13,12 @@ interface Props {
   lang: string
 }
 
+// 题面是来自网络的不受信任 HTML：用 DOMPurify 消毒，而不是手写正则（正则很容易被绕过）。
 function sanitize(html: string): string {
-  return html
-    .replace(/<script[\s\S]*?<\/script>/gi, '')
-    .replace(/\son\w+\s*=\s*"[^"]*"/gi, '')
-    .replace(/\son\w+\s*=\s*'[^']*'/gi, '')
-    .replace(/javascript:/gi, '')
-    .replace(/<iframe[\s\S]*?<\/iframe>/gi, '')
+  return DOMPurify.sanitize(html, {
+    USE_PROFILES: { html: true },
+    ADD_ATTR: ['target', 'rel']
+  })
 }
 
 function newId(): string {

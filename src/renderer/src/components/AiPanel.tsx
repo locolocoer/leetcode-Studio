@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
+import DOMPurify from 'dompurify'
 import type { AiContext, AiMessage, AiMode, Problem, RunResult, DebugSnapshot, Language } from '../../../shared/types'
 import { renderMarkdown } from '../markdown'
 
@@ -162,14 +163,14 @@ export default function AiPanel({
           <div key={i} className={`ai-msg ${m.role}`}>
             <div className="ai-role">{m.role === 'user' ? '我' : '助教'}</div>
             {m.role === 'assistant'
-              ? <div className="md-body ai-md" dangerouslySetInnerHTML={{ __html: renderMarkdown(m.content) }} />
+              ? <div className="md-body ai-md" dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(renderMarkdown(m.content)) }} />
               : <div className="ai-text">{m.content}</div>}
           </div>
         ))}
         {streaming && (
           <div className="ai-msg assistant">
             <div className="ai-role">助教</div>
-            <div className="md-body ai-md" dangerouslySetInnerHTML={{ __html: renderMarkdown(streaming) }} />
+            <div className="md-body ai-md" dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(renderMarkdown(streaming)) }} />
           </div>
         )}
         {busy && !streaming && <div className="ai-typing">正在思考…</div>}

@@ -189,6 +189,15 @@ export interface Settings {
   shareHarness?: boolean
   /** 发布模板到共享库用的 GitHub Token（只需该仓库的 contents 写权限） */
   githubToken?: string
+  // ---- 密钥脱敏（明文不下发渲染层）----
+  /** 只读标记：是否已配置 AI Key（由 settings:get 返回，不落盘） */
+  hasApiKey?: boolean
+  /** 只读标记：是否已配置 GitHub Token（由 settings:get 返回，不落盘） */
+  hasGithubToken?: boolean
+  /** 一次性标记：保存时清除 AI Key（由渲染层设置，不落盘） */
+  clearApiKey?: boolean
+  /** 一次性标记：保存时清除 GitHub Token（由渲染层设置，不落盘） */
+  clearGithubToken?: boolean
 }
 
 // ---- AI 助手 ----

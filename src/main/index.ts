@@ -165,15 +165,19 @@ function api() {
     getProblems: () => store.loadProblems(),
     updateProblem: (p: Problem) => store.upsertProblem(p),
     removeProblem: (id: string) => store.removeProblem(id),
-    getSettings: () => store.loadSettings(),
-    saveSettings: (s: Settings) => { store.saveSettings(s); return true },
+    getSettings: () => store.getPublicSettings(),
+    saveSettings: (s: Settings) => { store.saveSettingsFromRenderer(s); return true },
     detectToolchains: (settings?: Settings) => detectAll(settings),
     fetchList: (host?: string) => fetchProblemIndex(host, join(dataDir, '.leetcode-studio')),
     fetchDetail: (slug: string, host?: string) => fetchProblemDetail(slug, host),
     runTests: (problem: Problem, language: Language, source: string, tests: TestCase[]) =>
       runAll(problem, language, source, tests, ctx(), (cr) => onCase(cr)),
     clipboardText: () => clipboard.readText(),
-    openExternal: (url: string) => shell.openExternal(url),
+    // 外链只放行 http/https，避免被用来打开 file:// 或其它自定义协议
+    openExternal: (url: string) => {
+      if (/^https?:\/\//i.test(url)) shell.openExternal(url).catch(() => {})
+      return false
+    },
     getRuntimeDir: () => runtimeDir
   }
 }
@@ -527,11 +531,17 @@ app.whenReady().then(() => {
     Menu.setApplicationMenu(null)
   }
 
+  // 本应用不需要摄像头/麦克风/定位等权限，一律拒绝，不给远程内容留后门
+  session.defaultSession.setPermissionRequestHandler((_wc, _permission, callback) => callback(false))
+  session.defaultSession.setPermissionCheckHandler(() => false)
+
   const base = app.isPackaged ? app.getPath('userData') : app.getAppPath()
   dataDir = base
   runtimeDir = join(base, '.runtime')
   try { writeFileSync(join(runtimeDir, '.keep'), '') } catch {}
   store = new Store(join(base, '.leetcode-studio'))
+  // 旧版密钥是明文落盘，启动时迁移成系统安全存储加密
+  store.migrateSecrets()
   lc = new LeetCodeClient(join(base, '.leetcode-studio'))
   // AI 生成的判题模板缓存（按题目 + 语言 + 签名保存，验证通过才会写入）
   initAiHarnessCache(join(base, '.leetcode-studio'))

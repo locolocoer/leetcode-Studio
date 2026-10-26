@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import DOMPurify from 'dompurify'
 import type { Language, Problem, SolutionDetail, SolutionItem, SolutionOrderBy } from '../../../shared/types'
 import { renderMarkdown } from '../markdown'
 
@@ -244,7 +245,7 @@ export default function SolutionModal({ problem, language, onClose }: Props) {
                       </div>
                     </div>
                   </div>
-                  <div className="md-body" ref={bodyRef} dangerouslySetInnerHTML={{ __html: html }} />
+                  <div className="md-body" ref={bodyRef} dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(html) }} />
                 </>
               )}
               {!detailLoading && !detailErr && !detail && !activeSlug && (
