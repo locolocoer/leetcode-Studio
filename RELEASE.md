@@ -1,14 +1,24 @@
-# LeetCode Studio 1.1.22 发布说明
+# LeetCode Studio 1.2.0 发布说明
 
 本地 LeetCode 刷题桌面应用：多语言编译运行、逐步调试、查看题解、AI 引导、账号登录与一键提交。
 所有编译器与运行时已内置于安装包，**无需另外安装 Python / JDK / GCC**。
 
-- 版本：1.1.22
+- 版本：1.2.0
 - 平台：Windows 10 / 11（x64）
 - 仓库：<https://github.com/locolocoer/leetcode-Studio>
 - 下载：<https://github.com/locolocoer/leetcode-Studio/releases>
 
-## 本版更新（1.1.22）
+## 本版更新（1.2.0）
+
+**安全与隐私全面加固**
+
+- **题面内容改用 DOMPurify 消毒**：替换原来的手写正则（`<script>`/`on*`/`javascript:`/`<iframe>`），手写正则很容易被 `svg`、无引号事件、实体编码等绕过。题解与 AI 输出在 Markdown 渲染后再加一层 DOMPurify 兜底。
+- **外链只放行 http/https**：`openExternal` 通道补上协议白名单，渲染层即使被攻破也打不开 `file://` 或其它自定义协议。
+- **新增权限处理器 + 生产环境 CSP**：摄像头/麦克风/定位等权限一律拒绝；生产包注入内容安全策略（`script-src 'self'` 等），即使远程 HTML 没消毒干净，内联事件处理器与 `javascript:` 协议也会被浏览器拦截。
+- **密钥加密落盘、明文不再下发渲染层**：AI API Key 与 GitHub Token 改用系统安全存储（Windows 上用 DPAPI）加密保存，`settings:get` 不再返回明文，设置页改为「已配置 / 未配置 + 一键清除」的掩码交互；旧版明文密钥在启动时自动迁移。LeetCode 会话 Cookie 也整体加密落盘。
+- **回归测试接入 CI**：新增 `secrets-test`，并用 `run-regressions.mjs` 把纯逻辑回归（密钥/记录/符号）挂到 GitHub Actions，每次 push 自动跑。补了 prettier 配置与 `format` 脚本。
+
+### 1.1.22
 
 - 修复「最大化后还原，右侧编辑器宽度不回收」：还原后整页被撑到比窗口宽（1440 的窗口里页面宽 1949），右栏与编辑器还停在最大化时的宽度，顶栏的「提交」等按钮被挤出可视区。原因是右栏作为栅格项用了默认的 `min-width: auto`，下限被编辑器当前宽度顶住，窗口变小也压不下去。现在右栏能正常收缩，编辑器跟着回收并重新排版。
 - 新增界面回归 `scripts/ui-layout-check.mjs`：连做两轮「最大化 → 还原」，校验右栏/编辑器宽度回到基准、整页无横向溢出、顶栏按钮都在可视区内，再把视口压到最小窗口宽度复核一次。
@@ -124,8 +134,8 @@
 
 | 文件 | 大小 | 说明 |
 | --- | --- | --- |
-| `LeetCode-Studio-1.1.22-setup.exe` | ≈172 MB | 安装版（推荐）：可自选目录、创建快捷方式、支持自动更新 |
-| `LeetCode-Studio-1.1.22-portable.exe` | ≈172 MB | 免安装便携版：双击即用（首次启动需解压内置工具链到临时目录，约 1 分钟） |
+| `LeetCode-Studio-1.2.0-setup.exe` | ≈172 MB | 安装版（推荐）：可自选目录、创建快捷方式、支持自动更新 |
+| `LeetCode-Studio-1.2.0-portable.exe` | ≈172 MB | 免安装便携版：双击即用（首次启动需解压内置工具链到临时目录，约 1 分钟） |
 | `latest.yml` | — | 自动更新元数据（electron-builder 生成，随 Release 发布，含安装包 sha512） |
 
 > 文件名不带空格，确保自动更新的 `latest.yml` 与实际文件名一致。
